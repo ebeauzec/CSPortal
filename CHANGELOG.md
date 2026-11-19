@@ -4,6 +4,16 @@ Neutral release notes. Each entry says what changed and what is **not verified**
 
 ## Unreleased
 
+**Changed (access keys; see `docs/ACCESS_KEYS_GUIDE.md`)**
+- **Guided key creation** for customer administrators: four plain questions, one button; the portal creates the storage
+  user, its own group and the key, and rolls back if the grid refuses a step.
+- Result page: secret shown once with copy buttons, what the key can do, connection details, a copy-and-paste test command,
+  a five-step "what to do now" list and a troubleshooting table. The Access keys page opens with a five-step summary.
+- Keys are listed with their permissions in words; *Add another key* supports replacement without downtime; deleting the
+  last key of a guided key removes its permissions too. The default expiry is now 90 days.
+- Operators can still add replacement keys but not create new permissions.
+- Customer guide `docs/ACCESS_KEYS_GUIDE.md`. Not verified on a real grid.
+
 **Added (operations and hardening; see `docs/OPERATIONS.md`, `docs/SECURITY.md`)**
 - **Re-authentication** for sensitive actions: the password (and code) is asked again when the last confirmation is
   older than `security.reauth_minutes`; the original request is kept and run once after success.

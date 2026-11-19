@@ -54,7 +54,7 @@ console shows the result per customer, with the reason when something is missing
 | `catalogue` | admin | Plans, rate cards, feature switches, module switchboard | UC1, UC2 | Built |
 | `tenant-onboarding` | admin | Create, suspend, resume, close customers and their grid tenants | UC1 | Built |
 | `tenant-access` | customer | Portal users, roles, invitations, sessions; storage users and groups scoped to buckets | UC1 | Built (1.1.0) |
-| `s3-access` | customer | Access-key lifecycle (shown once) and endpoint details | UC1 | Built |
+| `s3-access` | customer | Guided key creation (name, permissions, buckets, expiry), secret shown once, connection details and test command, replacement and removal | UC1 | Built (2.0.0) |
 | `buckets` | customer | Buckets, versioning, lifecycle, access policy, CORS, Object Lock and default retention, protection posture | UC3 | Built (1.1.0) |
 | `usage-billing` | both | Usage trends, monthly statements, adjustments, CSV export | UC2 | Built |
 | `capacity-alerts` | both | Quota meter, alerts, quota requests, status notices | UC4 | Built |

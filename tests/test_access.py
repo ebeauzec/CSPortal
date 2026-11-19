@@ -534,6 +534,81 @@ class PortalControls(unittest.TestCase):
         self.assertIn("days)", c.get(f"/keys?user={user}")[1])
         self.app.backend.delete_key(ref, user, new[0]["id"])
 
+    # ------------------------------------------------------------ guided access key
+    def test_guided_key_creates_user_group_and_shows_the_secret_once(self):
+        c = self.login()
+        ref = self.ref("riverbend")
+        st, page = c.get("/keys/new")
+        self.assertEqual(st, 200)
+        for text in ("What is this key for?", "What may it do?", "Which buckets?", "How long should it work?", "Before you start"):
+            self.assertIn(text, page)
+        buckets = [b["name"] for b in self.app.backend.list_buckets(ref)]
+        st, page = c.post_form("/keys/new", "/keys/new", {"name": "nightly-backup", "note": "office backup server", "access": "read-only",
+                                                           "scope": "selected", "b_" + buckets[0]: "1", "expiry": "30"})
+        self.assertEqual(st, 200)
+        for text in ("Secret access key", "What to do now", "If something does not work", "AWS_ACCESS_KEY_ID", "path-style"):
+            self.assertIn(text, page)
+        g = next(x for x in self.app.backend.list_groups(ref) if x["name"] == "key-nightly-backup")
+        self.assertEqual((g["access"], g["buckets"]), ("read-only", [buckets[0]]))
+        u = next(x for x in self.app.backend.list_users(ref) if x["username"] == "nightly-backup")
+        self.assertEqual(u["groups"], ["key-nightly-backup"])
+        listing = c.get("/keys")[1]
+        self.assertIn("nightly-backup", listing)
+        self.assertIn("Read only", listing)
+        self.assertIn("How to connect an application, in five steps", listing)
+        self.assertNotIn("Secret access key", listing)                          # shown once
+        key = self.app.backend.list_keys(ref, "nightly-backup")[0]
+        self.assertTrue(self.app.db.one("SELECT 1 FROM audit WHERE action='key.create' AND target='nightly-backup'"))
+        # deleting the only key also removes the key's own user and group
+        _, page = c.get("/keys")
+        c.post("/keys/delete", {"_csrf": c.csrf(page), "user": "nightly-backup", "key": key["id"]})
+        self.assertFalse([x for x in self.app.backend.list_users(ref) if x["username"] == "nightly-backup"])
+        self.assertFalse([x for x in self.app.backend.list_groups(ref) if x["name"] == "key-nightly-backup"])
+
+    def test_guided_key_asks_again_when_the_answers_are_incomplete(self):
+        c = self.login()
+        ref = self.ref("riverbend")
+        users_before = len(self.app.backend.list_users(ref))
+        st, page = c.post_form("/keys/new", "/keys/new", {"name": "x", "access": "read-only", "scope": "all", "expiry": "90"})
+        self.assertEqual(st, 400)
+        self.assertIn("2 to 26", page)
+        st, page = c.post_form("/keys/new", "/keys/new", {"name": "needs-bucket", "access": "read-only", "scope": "selected", "expiry": "90"})
+        self.assertEqual(st, 400)
+        self.assertIn("Tick at least one bucket", page)
+        self.assertIn('value="needs-bucket"', page)                              # what was typed is kept
+        existing = self.app.backend.list_users(ref)[0]["username"]
+        st, page = c.post_form("/keys/new", "/keys/new", {"name": existing, "access": "read-only", "scope": "all", "expiry": "90"})
+        self.assertEqual(st, 400)
+        self.assertIn("already exists", page)
+        self.assertEqual(len(self.app.backend.list_users(ref)), users_before)
+
+    def test_guided_key_leaves_nothing_behind_when_the_grid_refuses(self):
+        c = self.login()
+        ref = self.ref("riverbend")
+        real = self.app.backend.create_key
+
+        def refuse(*a, **k):
+            from csportal.backends.base import BackendError
+            raise BackendError("grid", "The grid refused.", 500)
+        self.app.backend.create_key = refuse
+        try:
+            c.post_form("/keys/new", "/keys/new", {"name": "will-fail", "access": "read-write", "scope": "all", "expiry": "0"})
+        finally:
+            self.app.backend.create_key = real
+        self.assertFalse([x for x in self.app.backend.list_users(ref) if x["username"] == "will-fail"])
+        self.assertFalse([x for x in self.app.backend.list_groups(ref) if x["name"] == "key-will-fail"])
+
+    def test_an_operator_can_replace_a_key_but_not_create_permissions(self):
+        op = self.login("omar@riverbend.example")
+        st, page = op.get("/keys/new")
+        self.assertEqual(st, 403)
+        self.assertIn("administrator", page)
+        st, page = op.get("/keys")
+        self.assertNotIn("Create an access key</a>", page)
+        self.assertIn("Add another key", page)
+        st, _ = op.post_form("/keys", "/keys/new", {"name": "sneaky", "access": "read-write", "scope": "all", "expiry": "90"})
+        self.assertEqual(st, 403)
+
 
 if __name__ == "__main__":
     unittest.main()

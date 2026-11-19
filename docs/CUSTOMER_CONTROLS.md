@@ -78,11 +78,20 @@ Audit actions: `group.create`, `group.update`, `group.delete`, `storage_user.cre
 
 Page: **Access keys**. Permission to change: `keys.manage` (administrator, operator).
 
+- **Guided creation** (administrator): the page *Create an access key* asks four questions (what is it for, read only
+  or read and write, which buckets, how long). The portal then creates the storage user and its own group
+  (`key-<name>`) and the key in one step, and leaves nothing behind if the grid refuses part of it. The result page
+  shows the secret once, the four connection settings, a test command and a troubleshooting table. The steps for the
+  customer are in [ACCESS_KEYS_GUIDE.md](ACCESS_KEYS_GUIDE.md).
+- *Change permissions* on a key opens its group, so access and buckets can be changed later. Deleting the last key of
+  a guided key also removes its user and group (`key.remove_all`).
+- Operators (`keys.manage` without `access.edit`) can add a replacement key to an existing key but cannot create new
+  permissions.
 - Up to 5 keys per storage user. The secret is shown **once**; the portal never stores it.
-- Optional **expiry**: never, 30, 90, 180 days or 1 year. The page shows the date and the days left, and marks keys
+- Optional **expiry**: 30, 90 (suggested), 180 days, 1 year or never. The page shows the date and the days left, and marks keys
   that are expired or expire within 14 days. The grid enforces the expiry.
 - To rotate: create a new key, switch the application, delete the old key.
-- Audit: `key.create` (with the expiry date), `key.delete`.
+- Audit: `key.create` (with access, buckets and expiry), `key.delete`, `key.remove_all`.
 
 ## 4. Who can use a bucket (access policy)
 
