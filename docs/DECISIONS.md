@@ -6,7 +6,7 @@ a new entry that supersedes the old one.
 
 ## ADR-001. Technology stack
 
-**Status: Accepted (2026-11-19): Python 3.12, standard library plus one package (`cryptography`), server-rendered
+**Status: Accepted (2026-11-19): Python 3.12, standard library plus one direct package (`cryptography`, with the two packages it needs), server-rendered
 pages with a small vendored script, SQLite.** Chosen because it keeps the dependency tree tiny, builds into one
 image, matches the owner's other tools, and is easy to audit. The options considered are kept below.
 

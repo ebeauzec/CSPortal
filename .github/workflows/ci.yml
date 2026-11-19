@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 5 * * 1"      # weekly: new vulnerabilities appear without any commit
 permissions:
   contents: read
 jobs:
@@ -19,3 +21,26 @@ jobs:
           PYTHONPATH: .
       - name: Repository rules (no tool attribution, no secrets, no customer data)
         run: python tools/check_repo.py
+
+  dependency-scan:
+    # Fails the build when a pinned dependency has a known vulnerability, and publishes the bill of materials.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install scan tools (pinned; they are not part of the product)
+        run: pip install pip-audit==2.10.1 cyclonedx-bom==8.0.1
+      - name: Known vulnerabilities in requirements.txt and everything it pulls in
+        run: pip-audit -r requirements.txt --strict --progress-spinner off
+      - name: Software bill of materials (CycloneDX)
+        run: |
+          python -m venv /tmp/product-env
+          /tmp/product-env/bin/pip install -r requirements.txt
+          cyclonedx-py environment /tmp/product-env --of JSON -o sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json
+          retention-days: 90

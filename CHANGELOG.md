@@ -8,10 +8,18 @@ Neutral release notes. Each entry says what changed and what is **not verified**
 - `docs/compliance/CONTROL_MAP.md`: control map for ISO/IEC 27001:2022 Annex A and SOC 2 (security, availability,
   confidentiality), with the state of each control and the gaps that matter most.
 
+- CI job `dependency-scan`: `pip-audit` on `requirements.txt` (fails the build on a known vulnerability), a
+  CycloneDX software bill of materials published as a build artifact, and a weekly scheduled run.
+- Dependabot configuration for Python packages, the base image and workflow actions.
+
 **Changed**
 - ADR-007 accepted: compliance scope is ISO/IEC 27001 and SOC 2 (owner decision, 2026-11-19).
+- `requirements.txt` now pins the two packages `cryptography` needs (`cffi` 2.1.1, `pycparser` 3.12), and
+  THIRD_PARTY_NOTICES.md lists them. Earlier text saying "one third-party package" was incomplete.
 
 **Not verified**
+- The dependency scan was run locally and found no known vulnerabilities. Its first run in GitHub Actions has
+  not been seen yet. It covers Python packages only, not the base image or host.
 - The control map is a mapping of the product's own design to the controls. No audit, certificate or independent
   review has been done. Control numbering should be checked against the edition the auditor uses.
 

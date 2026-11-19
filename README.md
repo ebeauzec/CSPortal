@@ -67,7 +67,7 @@ Verify on a non-production grid, run your own security review and test restores 
 ## Layout
 
 ```
-csportal/            application (Python 3.12; only third-party package: cryptography)
+csportal/            application (Python 3.12; only direct third-party package: cryptography)
   backends/          storage connector interface, simulator, StorageGRID connector
   modules/           one file per module
   web/               HTTP layer, security pipeline, UI toolkit, static files (no external assets)

@@ -1,2 +1,6 @@
-# The only third-party runtime dependency. Pinned. Licence recorded in THIRD_PARTY_NOTICES.md.
+# One direct third-party runtime dependency (cryptography) and the two packages it needs. All pinned.
+# Licences are recorded in THIRD_PARTY_NOTICES.md. The CI dependency scan checks this file for known
+# vulnerabilities and publishes a software bill of materials (see docs/SECURITY.md).
 cryptography==50.0.0
+cffi==2.1.1
+pycparser==3.12
