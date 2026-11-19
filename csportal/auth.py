@@ -36,7 +36,7 @@ CSP_PERMS: dict[str, set[str]] = {
     "super-administrator": _CSP_VIEW | {"customers.edit", "customers.provision", "customers.delete", "plans.edit",
                                         "billing.edit", "quota.decide", "notices.edit", "modules.edit",
                                         "users.manage", "logs.view", "system.view", "system.edit",
-                                        "settings.edit", "demo.reset"},
+                                        "settings.edit", "demo.reset", "approvals.view", "approvals.decide"},
     "operations": _CSP_VIEW | {"customers.edit", "customers.provision", "quota.decide", "notices.edit",
                                "logs.view", "system.view"},
     "finance": {"admin.overview", "customers.view", "plans.view", "billing.view", "billing.edit", "quota.view"},
@@ -286,6 +286,35 @@ class Auth:
         self.audit.record("user.mfa_enrolled" if enrolling else "user.signin", u["email"], "user", u["customer_id"],
                           u["email"], "mfa", ip)
         return True
+
+    # ---------------------------------------------------------- re-authentication
+    def reauth_fresh(self, sess: Session) -> bool:
+        """True when the person signed in, or confirmed their password, within `security.reauth_minutes`."""
+        r = self.db.one("SELECT created_at, reauth_at FROM sessions WHERE id=?", (sess.id_hash,))
+        if not r:
+            return False
+        newest = max(r["created_at"], r["reauth_at"] or "")
+        window = dt.timedelta(minutes=self.cfg.d["security"].get("reauth_minutes", 10))
+        return parse_iso(newest) + window > utcnow()
+
+    def reauthenticate(self, sess: Session, password: str, code: str, ip: str) -> None:
+        """Check the password (and the multi-factor code when it is on) again. Raises AuthError."""
+        if not self.limiter.hit("reauth:" + sess.user_id, 6, 300):
+            raise AuthError("Too many attempts. Wait a few minutes and try again.")
+        u = self.db.one("SELECT * FROM users WHERE id=?", (sess.user_id,))
+        if not u or not crypto.verify_password(password or "", u["pw_hash"] or _DUMMY_HASH):
+            if u:
+                self._fail(u, ip)
+            raise AuthError("The password is not correct.")
+        if u["mfa_enabled"] and u["totp_sealed"]:
+            secret = self.box.open(u["totp_sealed"], "totp:" + u["id"])
+            step = crypto.totp_verify(secret, code or "", u["totp_last_step"] or 0)
+            if not step:
+                logs.event(slog, logging.WARNING, "reauth mfa failed", account=u["email"], ip=ip)
+                raise AuthError("The code is not correct.")
+            self.db.run("UPDATE users SET totp_last_step=? WHERE id=?", (step, u["id"]))
+        self.db.run("UPDATE sessions SET reauth_at=? WHERE id=?", (iso(), sess.id_hash))
+        self.audit.record("user.reauth", u["email"], "user", u["customer_id"], u["email"], "", ip)
 
     def disable_mfa(self, user_id: str, actor: str, ip: str = "") -> None:
         u = self.db.one("SELECT * FROM users WHERE id=?", (user_id,))

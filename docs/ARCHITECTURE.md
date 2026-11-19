@@ -77,7 +77,12 @@ Small, stable, and the only part every deployment runs.
   module cannot read another customer's data by mistake.
 - **Settings.** Layered: product default, CSP, plan, customer. Modules declare a settings schema
   and the admin console renders its screens from that schema.
-- **Audit log.** Append-only record of every change and every sign-in, per customer and for the CSP.
+- **Audit log.** Append-only record of every change and every sign-in, per customer and for the CSP. Hash-chained,
+  with signed checkpoints and a retention archive (`audit.py`).
+- **Sensitive-action controls.** Routes can require a fresh password confirmation (`reauth`), and the three most
+  dangerous provider actions can require a second super administrator (`approvals.py`).
+- **Operations.** Backups with integrity checks, drift check against the grid, master-key rotation and personal-data
+  export and erasure (`ops.py`), run by the job runner, the admin console and the command line.
 - **Job runner.** Scheduled and queued work (metering, alerts, invoices, clean-up).
 - **Notifications.** E-mail and webhook channels, templated and per-customer branded.
 - **Module registry.** Loads module manifests, checks versions and dependencies, mounts routes.
@@ -129,7 +134,8 @@ One application image that contains everything: both surfaces, the job runner, a
 (vendored, no external fetches) and the embedded database. One process, one data directory, one
 configuration file. Backup is a copy of the data directory plus the encryption key (kept apart).
 The customer-portal surface sits behind the CSP's reverse proxy and web application firewall; the
-admin console is published on a private network only. Single node first. The data layer keeps no
+admin console is published on a private network only. Single node first: on Kubernetes that means exactly one replica
+with a ReadWriteOnce volume (see [../deploy/kubernetes/README.md](../deploy/kubernetes/README.md)). The data layer keeps no
 state outside the database, so a later move to a server database and several replicas stays possible.
 
 ## Non-goals (for now)

@@ -75,6 +75,18 @@ MIGRATIONS: list[tuple[int, str]] = [
     CREATE INDEX audit_customer ON audit(customer_id, id);
     CREATE TABLE jobs_state (name TEXT PRIMARY KEY, last_run TEXT, last_status TEXT, last_detail TEXT);
     """),
+    (2, """
+    CREATE TABLE audit_checkpoints (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, upto_id INTEGER NOT NULL, hash TEXT NOT NULL, mac TEXT NOT NULL);
+    CREATE TABLE audit_anchor (
+        id INTEGER PRIMARY KEY CHECK (id = 1), upto_id INTEGER NOT NULL, hash TEXT NOT NULL, mac TEXT NOT NULL,
+        pruned_at TEXT NOT NULL, rows_pruned INTEGER NOT NULL);
+    ALTER TABLE sessions ADD COLUMN reauth_at TEXT;
+    CREATE TABLE approvals (
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, target TEXT NOT NULL, summary TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}',
+        requested_by TEXT NOT NULL, requested_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'pending', decided_by TEXT, decided_at TEXT, note TEXT DEFAULT '');
+    """),
 ]
 
 # Tables whose rows belong to one customer. The scoped accessor refuses anything else.

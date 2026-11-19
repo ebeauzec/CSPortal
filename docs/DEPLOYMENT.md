@@ -54,6 +54,13 @@ CSPortal is one image and one process. This page covers a production install. Fo
 8. **Configure in the admin console:** branding, plans (price, quota, features), then create a test customer
    and walk through the customer journey.
 
+## Kubernetes
+
+Manifests are in [../deploy/kubernetes/](../deploy/kubernetes/README.md): a StatefulSet with **one replica**, a
+ReadWriteOnce volume at `/data`, a restricted security context, probes on `/healthz`, ClusterIP services (the admin
+console is never published), a network policy and an example ingress for the customer portal. They have **not been
+tested on a cluster**. Never run more than one replica: the embedded database allows one writer.
+
 ## Network layout
 
 | Listener | Default | Exposure |
@@ -64,8 +71,10 @@ CSPortal is one image and one process. This page covers a production install. Fo
 
 ## Backup and restore
 
-- **Backup:** `python -m csportal backup` (or the System page) writes a consistent database copy to
-  `data/backups/`. Copy it off the host. Store the master key separately.
+- **Backup:** every 24 hours by default (`jobs.backup_hours`), on demand from the Operations page, or with
+  `python -m csportal backup`. Copies go to `data/backups/`, are integrity-checked when made, and the newest 14 are
+  kept (`jobs.backup_keep`). Copy them off the host. Store the master key separately. Also copy `data/audit-archive/`
+  (old audit records) to long-term storage.
 - **Restore:** stop the service, put the database file back as `data/csportal.db`, start with the same master key.
 - **Check:** `python -m csportal verify-audit` confirms the audit chain is intact after a restore.
 
@@ -84,7 +93,10 @@ restoring the backup and starting the previous image.
 - [ ] Log forwarding configured (`log.syslog`) and log files rotated off the host.
 - [ ] Multi-factor authentication required for customers (default) and enforced for staff.
 - [ ] Mail relay tested: send an invitation to yourself.
-- [ ] Backups tested by restoring them on another host.
+- [ ] Backups tested by restoring them on another host ([runbook](runbooks/RESTORE.md)).
+- [ ] `security.four_eyes` switched on, with at least two named super administrators.
+- [ ] Audit archive files copied to long-term storage; retention period agreed with your compliance owner.
+- [ ] Master key rotation scheduled ([runbook](runbooks/ROTATE_MASTER_KEY.md)).
 
 ## Limits of this release
 

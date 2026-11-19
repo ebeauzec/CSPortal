@@ -112,6 +112,24 @@ def register(app):
             return redirect("/mfa")
         return redirect("/")
 
+    # ------------------------------------------------------------ re-authentication
+    @app.route("both", "GET", "/reauth")
+    def reauth_form(ctx):
+        return ui.reauth_page(ctx, "", None, nxt=_safe_next(ctx.q("next")))
+
+    @app.route("both", "POST", "/reauth")
+    def reauth_post(ctx):
+        path, nxt = ctx.f("_replay_path"), _safe_next(ctx.f("_next"))
+        form = {k[2:]: v for k, v in ctx.req.form.items() if k.startswith("r_")}
+        try:
+            app.auth.reauthenticate(ctx.sess, ctx.req.form.get("password", ""), ctx.f("code"), ctx.req.ip)
+        except AuthError as e:
+            return html_response(ui.reauth_page(ctx, path, form if path else None, str(e), nxt), 401)
+        if path:
+            form["_csrf"] = ctx.sess.csrf
+            return app.replay(ctx.req, _safe_next(path), form)
+        return redirect(nxt)
+
     # ------------------------------------------------------------ invitation / password set
     @app.route("both", "GET", "/invite/{token}", public=True)
     def invite_form(ctx):

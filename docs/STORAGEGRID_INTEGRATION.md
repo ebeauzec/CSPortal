@@ -100,9 +100,14 @@ The connector is `csportal/backends/storagegrid.py`; the interface is `csportal/
 - Customer controls built on these calls are listed in [CUSTOMER_CONTROLS.md](CUSTOMER_CONTROLS.md).
 - Not covered yet: platform services, identity source, grid federation, default encryption, legal hold
   (see [TENANT_PARITY.md](TENANT_PARITY.md)).
-- Possible fault, to settle on a real grid: `create_tenant` generates a password for the service user but does not
-  set it, and stores the tenant root credentials as the working credential. If the grid does not accept the root
-  credentials for the calls the portal makes, the service user needs a password set at creation.
+- **Tenant credentials (settled in code, to be proved on a real grid).** When a grid account is created the portal sets
+  the tenant **root** password itself and stores `root` and that password encrypted. Management calls for that tenant
+  (groups, users, access keys) use these credentials. The portal then creates a service group and user only to own the
+  S3 access key used for bucket settings; that key is stored beside the root credentials, which are kept. This is a
+  deviation from least privilege: the portal holds a root credential per tenant. The closing step is to find, on the
+  supported releases, a documented way to give a local tenant user a password at creation, switch the management sign-in to that
+  user, and keep root only in the runbook. Until then: encrypt (done), restrict who can read the database and the
+  master key, and rotate root with [runbooks/ROTATE_GRID_CREDENTIALS.md](runbooks/ROTATE_GRID_CREDENTIALS.md).
 
 ### Test plan for a real grid
 
@@ -114,7 +119,7 @@ step in [CHANGELOG.md](../CHANGELOG.md), then change the status in this page, th
 |---|---|---|
 | 1 | Admin console > Storage grid > Test these settings | Every step ok for every admin node and endpoint |
 | 2 | `python -m csportal conformance` | Every call `ok` (this now includes `PUT /org/groups/{id}`) |
-| 3 | Create a tenant from the admin console | Account, quota, group `csportal-service` and user exist on the grid. **Open question:** the service user's credentials work for the calls in steps 5-12 (see the possible fault in Implementation) |
+| 3 | Create a tenant from the admin console | Account, quota, group `csportal-service` and user exist on the grid. Confirm the tenant root sign-in works and that the S3 key of `csportal-service` works for steps 5-12 (see Tenant credentials in Implementation) |
 | 4 | Customer: invite a person, accept, sign in with MFA | Sign-in works; role change signs the person out |
 | 5 | Create a bucket with versioning; list buckets | Bucket appears with the right region; versioning "enabled" on the bucket page |
 | 6 | Add, change, remove a lifecycle rule; on the grid add a rule with a tag filter, then change another rule in the portal | The tag rule is unchanged on the grid |

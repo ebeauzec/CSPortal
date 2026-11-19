@@ -45,7 +45,12 @@ class SecretBox:
     """Authenticated encryption for stored secrets. The `aad` binds a value to its purpose."""
 
     def __init__(self, key: bytes):
+        self._key = key
         self._aes = AESGCM(key)
+
+    def derive(self, label: str) -> bytes:
+        """A separate 32-byte key for one purpose (for example signing audit checkpoints), derived from the master key."""
+        return hmac.new(self._key, b"csportal/v1/" + label.encode(), hashlib.sha256).digest()
 
     def seal(self, plaintext: str, aad: str = "") -> str:
         nonce = secrets.token_bytes(12)

@@ -173,6 +173,23 @@ def bare_page(app, title: str, body: str, ctx=None) -> str:
             f'<footer class="foot">{esc(COPYRIGHT)}</footer><script src="/static/app.js" defer></script></body></html>')
 
 
+def reauth_page(ctx, path: str, form_data: dict | None = None, error: str = "", nxt: str = "") -> str:
+    """Ask for the password (and the code) again. The original form is carried along and replayed after success."""
+    sess = ctx.sess
+    keep = "".join(f'<input type="hidden" name="r_{esc(k)}" value="{esc(v)}">'
+                   for k, v in (form_data or {}).items() if k != "_csrf")
+    fields = [{"name": "password", "label": "Your password", "type": "password"}]
+    if sess.mfa_enabled:
+        fields.append({"name": "code", "label": "Code from your authenticator app",
+                       "attrs": {"inputmode": "numeric", "maxlength": "6", "autocomplete": "one-time-code"}})
+    err = f'<div class="flash bad" role="alert">{esc(error)}</div>' if error else ""
+    extra = Raw(f'<input type="hidden" name="_replay_path" value="{esc(path if form_data is not None else "")}">'
+                f'<input type="hidden" name="_next" value="{esc(nxt)}">{keep}')
+    intro = Raw("<p>This action changes access or data. Confirm your identity to continue. Nothing has been changed yet.</p>"
+                + form("/reauth", fields, sess.csrf, "Confirm and continue", extra=extra))
+    return page(ctx, "Confirm it is you", Raw(err + str(card("Re-enter your credentials", intro))), "")
+
+
 def page(ctx, title: str, body, active: str = "", actions=None) -> str:
     app, sess = ctx.app, ctx.sess
     b = brand(app)

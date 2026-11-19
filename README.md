@@ -45,10 +45,13 @@ Version 0.1.0, a release candidate for Release 1. Be clear about what that means
 
 | Area | State |
 |---|---|
-| Core, both surfaces, 11 modules, demo mode, logging, audit | Built and tested (automated end-to-end tests against the simulator) |
+| Core, both surfaces, 12 modules, demo mode, logging, audit | Built and tested (automated end-to-end tests against the simulator) |
+| Customer controls: people, groups, keys, bucket access policy, CORS, Object Lock | Built; tested on the simulator and a fake TLS grid; **not verified on a real grid** ([docs/CUSTOMER_CONTROLS.md](docs/CUSTOMER_CONTROLS.md)) |
+| Operations: re-authentication, second-administrator approval, signed audit checkpoints and retention, backups, drift check, key rotation, personal-data export and erasure | Built and tested ([docs/OPERATIONS.md](docs/OPERATIONS.md), [runbooks](docs/runbooks/README.md)) |
+| Kubernetes | Manifests written for one replica; **not tested on a cluster** ([deploy/kubernetes](deploy/kubernetes/README.md)) |
 | StorageGRID connector | **Written, not yet verified on a real grid.** Run `python -m csportal conformance` against your grid first; see [docs/STORAGEGRID_INTEGRATION.md](docs/STORAGEGRID_INTEGRATION.md) |
 | Security | Designed per [docs/SECURITY.md](docs/SECURITY.md); implementation status listed there. **Not yet independently penetration tested** |
-| Scale and availability | Single node, embedded database. No clustering yet |
+| Scale and availability | Single node, embedded database. No clustering yet. Exactly one replica on Kubernetes |
 | Release 2 features (platform services, own identity provider, object browser, support, default encryption) | Planned; see [docs/ROADMAP.md](docs/ROADMAP.md) |
 
 Verify on a non-production grid, run your own security review and test restores before serving customers.

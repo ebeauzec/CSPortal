@@ -34,7 +34,7 @@ def build_app(cfg: Config, seed_demo: bool = True) -> App:
     log_dir = logs.setup(cfg)
     for b in bad:
         logs.event(log, logging.WARNING, "ignored a saved setting", detail=b)
-    audit = Audit(db)
+    audit = Audit(db, box.derive("audit-checkpoint"))
     auth = Auth(cfg, db, box, audit)
     ref: dict = {}
     backend = build_backend(cfg, db, box, ref)

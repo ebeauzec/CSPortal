@@ -73,6 +73,11 @@ class Simulator(StorageBackend):
         return {"s3": ["https://s3.example.net"], "regions": ["us-east-1"]}
 
     # ------------------------------------------------------------ tenants
+    def list_tenants(self):
+        with self._lock:
+            self._maybe_fail()
+            return [{"ref": r, "name": t["name"], "quota_bytes": t["quota"]} for r, t in sorted(self.s["tenants"].items())]
+
     def create_tenant(self, name, quota_bytes, features) -> str:
         with self._lock:
             self._maybe_fail()

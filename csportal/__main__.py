@@ -7,8 +7,13 @@
   selftest     run the built-in checks and exit
   conformance  compare the StorageGRID connector's calls with the grid's own API description
   bundle       write a diagnostic bundle to a file
-  backup       write a database backup
-  verify-audit check the audit hash chain
+  backup       write a database backup (checked after writing)
+  verify-audit check the audit hash chain, its checkpoints and the retention anchor
+  rotate-key   re-encrypt every stored secret under a new master key (stop the service first)
+  drift        compare customers and quotas with the tenant accounts on the grid
+  person-export  print everything held about one e-mail address (JSON)
+  person-erase   remove the accounts and stored mail for one e-mail address
+  set-tenant-password  store a new tenant root password after you changed it on the grid (checked first)
 """
 from __future__ import annotations
 
@@ -99,16 +104,87 @@ def cmd_bundle(args):
 def cmd_backup(args):
     cfg, app = _build(args)
     from pathlib import Path
-    dest = Path(args.out) if args.out else cfg.data_dir / "backups" / f"csportal-{time.strftime('%Y%m%dT%H%M%S')}.db"
-    app.db.backup(dest)
-    print(f"Wrote {dest}")
+    from . import ops
+    if args.out:
+        dest = Path(args.out)
+        app.db.backup(dest)
+        state = ops.check_backup(dest)
+        print(f"Wrote {dest} (check: {state})")
+        sys.exit(0 if state == "ok" else 2)
+    r = ops.backup_now(app, keep=0)
+    print(f"Wrote {cfg.data_dir / 'backups' / r['file']} ({r['bytes']:,} bytes, check: ok)")
 
 
 def cmd_verify_audit(args):
     cfg, app = _build(args)
-    ok, bad, n = app.audit.verify()
-    print(f"audit chain: {'intact' if ok else 'BROKEN at record ' + str(bad)} ({n} records)")
-    sys.exit(0 if ok else 2)
+    v = app.audit.verify_full()
+    print(f"audit chain: {'intact' if v['ok'] else 'PROBLEM'} ({v['rows']} records, {v['checkpoints']} checkpoints"
+          + (f", older records archived up to id {v['anchor_id']}" if v["anchor_id"] else "") + ")")
+    for p in v["problems"]:
+        print("  - " + p)
+    sys.exit(0 if v["ok"] else 2)
+
+
+def cmd_rotate_key(args):
+    import base64
+    from pathlib import Path
+    from . import ops
+    if not args.new_key_file:
+        raise SystemExit("Give --new-key-file: a file holding the new key (make one with: python -m csportal genkey > new.key).")
+    raw = Path(args.new_key_file).read_text(encoding="utf-8").strip()
+    new = base64.b64decode(raw)
+    cfg, app = _build(args)
+    pre = ops.backup_now(app, keep=0, label="csportal-before-key-rotation")
+    print(f"Backup before rotation: {pre['file']}")
+    res = ops.rotate_master_key(app, new)
+    print(f"Re-encrypted {res['secrets']} stored secret(s) and {res['totp']} multi-factor secret(s); audit checkpoints signed again.")
+    print("Now put the NEW key in CSPORTAL_MASTER_KEY (or the key file) and start the service. The old key no longer opens the data.")
+
+
+def cmd_drift(args):
+    from . import ops
+    cfg, app = _build(args)
+    rep = ops.drift_report(app)
+    print(ops.drift_summary(rep))
+    for x in rep["missing_on_grid"]:
+        print(f"  missing on grid : {x['customer']} ({x['ref']})")
+    for x in rep["quota_mismatch"]:
+        print(f"  quota differs   : {x['customer']} portal {x['portal_bytes']} bytes, grid {x['grid_bytes']} bytes")
+    for x in rep["not_in_portal"]:
+        print(f"  not in portal   : {x['name']} ({x['ref']})")
+    sys.exit(0 if rep["ok"] else 2)
+
+
+def cmd_person_export(args):
+    import json
+    from . import ops
+    cfg, app = _build(args)
+    print(json.dumps(ops.person_export(app, args.email), indent=2, default=str))
+
+
+def cmd_person_erase(args):
+    from . import ops
+    cfg, app = _build(args)
+    try:
+        r = ops.person_erase(app, args.email, "cli")
+    except ValueError as e:
+        raise SystemExit(str(e))
+    print(f"Removed {r['accounts']} account(s) and {r['mail']} stored mail(s). Audit records stay until retention ends.")
+
+
+def cmd_set_tenant_password(args):
+    """Use after the tenant root password was changed on the grid. The new password is read from the environment
+    variable CSPORTAL_NEW_TENANT_PASSWORD or typed in; it is tested against the grid before it is kept."""
+    import getpass
+    import os
+    from . import ops
+    cfg, app = _build(args)
+    pw = os.environ.get("CSPORTAL_NEW_TENANT_PASSWORD") or getpass.getpass("New tenant root password: ")
+    try:
+        ops.set_tenant_password(app, args.customer, pw, "cli")
+    except ValueError as e:
+        raise SystemExit(str(e))
+    print("Stored. Restart the service (or wait up to an hour) so running sessions pick up the new password.")
 
 
 def main(argv=None):
@@ -116,7 +192,8 @@ def main(argv=None):
     p.add_argument("--config", default=None, help="path to the JSON configuration file")
     sub = p.add_subparsers(dest="cmd", required=True)
     for name, fn in [("serve", cmd_serve), ("demo", cmd_serve), ("genkey", cmd_genkey), ("init-admin", cmd_init_admin),
-                     ("conformance", cmd_conformance), ("bundle", cmd_bundle), ("backup", cmd_backup), ("verify-audit", cmd_verify_audit)]:
+                     ("conformance", cmd_conformance), ("bundle", cmd_bundle), ("backup", cmd_backup), ("verify-audit", cmd_verify_audit),
+                     ("rotate-key", cmd_rotate_key), ("drift", cmd_drift), ("person-export", cmd_person_export), ("person-erase", cmd_person_erase), ("set-tenant-password", cmd_set_tenant_password)]:
         sp = sub.add_parser(name)
         sp.set_defaults(fn=fn, demo=(name == "demo"))
         sp.add_argument("--port", type=int, default=None)
@@ -125,6 +202,12 @@ def main(argv=None):
         if name == "init-admin":
             sp.add_argument("--email", required=True)
             sp.add_argument("--name", default="")
+        if name in ("person-export", "person-erase"):
+            sp.add_argument("--email", required=True)
+        if name == "set-tenant-password":
+            sp.add_argument("--customer", required=True, help="the customer's short name (slug)")
+        if name == "rotate-key":
+            sp.add_argument("--new-key-file", default=None)
     args = p.parse_args(argv)
     args.fn(args)
 

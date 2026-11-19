@@ -62,7 +62,10 @@ PARAMS: list[Param] = [
     Param("security.lockout_attempts", "Failed sign-ins before lock-out", "security", "int", apply="live", lo=3, hi=50),
     Param("security.lockout_minutes", "Lock-out minutes", "security", "int", apply="live", lo=1, hi=1440),
     Param("security.min_password_length", "Minimum password length", "security", "int", apply="live", lo=8, hi=128),
-    Param("security.audit_retention_days", "Audit log retention (days)", "security", "int", "Recorded for policy. Automatic removal is not built yet, so nothing is deleted.", "live", lo=30, hi=36500),
+    Param("security.audit_retention_days", "Audit log retention (days)", "security", "int", "Records older than this are written to an archive file in the data folder and removed, once a day. The chain keeps verifying.", "live", lo=30, hi=36500),
+    Param("security.reauth_minutes", "Ask for the password again after (minutes)", "security", "int", "Sensitive actions (removing people, changing roles, deleting buckets, changing the grid connection) need a password confirmation when the last one is older than this.", "live", lo=1, hi=120),
+    Param("security.four_eyes", "Second administrator must approve dangerous actions", "security", "bool", "When on, closing a customer, changing the grid connection and removing staff wait for approval by a different super administrator. Turning this off is recorded in the audit log.", "live"),
+    Param("security.approval_hours", "Approval request lifetime (hours)", "security", "int", "A request that nobody approves in this time expires.", "live", lo=1, hi=720),
     Param("log.level", "Log level", "logging", "choice", apply="live", choices=("DEBUG", "INFO", "WARNING", "ERROR")),
     Param("log.dir", "Log directory", "logging", help="Empty means the logs folder inside the data directory.", apply="restart"),
     Param("log.max_mb", "Size of each log file (MB)", "logging", "int", apply="restart", lo=1, hi=1024),
@@ -76,6 +79,10 @@ PARAMS: list[Param] = [
     Param("smtp.starttls", "Use STARTTLS", "mail", "bool", apply="live"),
     Param("jobs.usage_sample_minutes", "Usage sampling interval (minutes)", "jobs", "int", apply="restart", lo=1, hi=1440),
     Param("jobs.alert_check_minutes", "Alert check interval (minutes)", "jobs", "int", apply="restart", lo=1, hi=1440),
+    Param("jobs.backup_hours", "Automatic database backup interval (hours, 0 = off)", "jobs", "int", "Each backup is checked after it is written. Copy backups off the host; keep the master key apart.", "restart", lo=0, hi=720),
+    Param("jobs.backup_keep", "Automatic backups to keep", "jobs", "int", "Older automatic backups are removed.", "live", lo=1, hi=365),
+    Param("jobs.drift_hours", "Grid comparison interval (hours, 0 = off)", "jobs", "int", "Compares customers and quotas with the tenant accounts on the grid and reports differences. Changes nothing.", "restart", lo=0, hi=720),
+    Param("jobs.audit_checkpoint_minutes", "Audit checkpoint interval (minutes)", "jobs", "int", "Signs the newest audit record so removal of recent records is detected.", "restart", lo=5, hi=1440),
     Param("backend.type", "Storage connector", "storage", help="simulator (demo) or storagegrid.", apply="file"),
 ]
 BY_KEY = {p.key: p for p in PARAMS}
@@ -208,6 +215,10 @@ def weakened(cfg) -> list[str]:
         out.append(f"Minimum password length is {d['security']['min_password_length']} (recommended: 12 or more).")
     if d["security"]["lockout_attempts"] > 10:
         out.append(f"Lock-out only after {d['security']['lockout_attempts']} failed sign-ins (recommended: 10 or fewer).")
+    if not d["security"].get("four_eyes"):
+        out.append("Dangerous provider actions (closing a customer, changing the grid connection, removing staff) do not need a second approver.")
+    if d["security"].get("reauth_minutes", 10) > 30:
+        out.append(f"Sensitive actions only ask for the password again after {d['security']['reauth_minutes']} minutes (recommended: 30 or fewer).")
     if d["session"]["idle_minutes"] > 60:
         out.append(f"Idle sessions last {d['session']['idle_minutes']} minutes (recommended: 60 or fewer).")
     if d["session"]["absolute_hours"] > 12:

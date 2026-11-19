@@ -4,6 +4,29 @@ Neutral release notes. Each entry says what changed and what is **not verified**
 
 ## Unreleased
 
+**Added (operations and hardening; see `docs/OPERATIONS.md`, `docs/SECURITY.md`)**
+- **Re-authentication** for sensitive actions: the password (and code) is asked again when the last confirmation is
+  older than `security.reauth_minutes`; the original request is kept and run once after success.
+- **Approval by a second super administrator** (`security.four_eyes`) for closing a customer, changing the grid
+  connection and removing staff; Approvals page; requests expire; request body stored encrypted.
+- **Audit log**: signed checkpoints that expose cut-off or rebuilt logs; daily retention that archives old records to
+  checksummed files and keeps a signed anchor; refuses to act on a chain that does not verify.
+- **Backups**: automatic, integrity-checked when made, oldest removed; Operations page with a check button.
+- **Drift check** between portal and grid (quota differences, accounts missing on the grid or not managed by the
+  portal), daily job, page, command and one-click quota alignment.
+- **Master-key rotation** command (all or nothing; re-encrypts secrets, multi-factor secrets and waiting requests;
+  renews audit signatures; backs up first).
+- **Personal data**: export and erase by e-mail address (page and commands); audit records stay until retention ends.
+- New admin pages: Approvals, Operations, Privacy. New settings: `security.reauth_minutes`, `security.four_eyes`,
+  `security.approval_hours`, `jobs.backup_hours`, `jobs.backup_keep`, `jobs.drift_hours`, `jobs.audit_checkpoint_minutes`.
+- Tests: `tests/test_ops.py`.
+- Runbooks in `docs/runbooks/`.
+
+**Fixed**
+- Creating a grid account never set the password of the portal's service user and then overwrote the stored tenant
+  credentials, so management calls for a new tenant would very probably have failed. The tenant root password is now
+  set and stored, and the S3 key is added to it.
+
 **Added (customer controls; see `docs/CUSTOMER_CONTROLS.md`)**
 - **Bucket access page**: readable list of the bucket policy; guided grants to a group, a storage user or the whole
   storage account (read, read and write, upload only; whole bucket or one folder); public read on or off (plan

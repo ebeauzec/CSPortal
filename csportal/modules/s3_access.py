@@ -75,7 +75,7 @@ def register(app):
             f'<p><a class="btn primary" href="/keys?user={ui.esc(ctx.f("user"))}">I have saved the secret</a></p>'))
         return html_response(ui.page(ctx, "Access key created", body, "/keys"))
 
-    @app.route("customer", "POST", "/keys/delete", perm="keys.manage", module="s3-access")
+    @app.route("customer", "POST", "/keys/delete", perm="keys.manage", module="s3-access", reauth=True)
     def delete(ctx):
         app.backend.delete_key(ctx.ref, ctx.f("user"), ctx.f("key"))
         ctx.audit("key.delete", ctx.f("user"), ctx.f("key"))

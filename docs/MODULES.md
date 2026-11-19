@@ -50,6 +50,7 @@ console shows the result per customer, with the reason when something is missing
 | `core-accounts` (core) | both | Sign-in, multi-factor authentication, invitations, own account | UC1 | Built |
 | `tenant-dashboard` (core) | both | Customer dashboard; provider overview | all | Built |
 | `system` (core) | admin | Health, logs, diagnostic bundle, backup, staff users, branding, demo reset | all | Built |
+| `operations` (core) | admin | Approvals by a second super administrator, drift check, backups, audit integrity, personal-data export and erasure | all | Built |
 | `catalogue` | admin | Plans, rate cards, feature switches, module switchboard | UC1, UC2 | Built |
 | `tenant-onboarding` | admin | Create, suspend, resume, close customers and their grid tenants | UC1 | Built |
 | `tenant-access` | customer | Portal users, roles, invitations, sessions; storage users and groups scoped to buckets | UC1 | Built (1.1.0) |

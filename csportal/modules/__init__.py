@@ -7,7 +7,7 @@ import logging
 log = logging.getLogger("csportal")
 
 ORDER = ["core_accounts", "tenant_dashboard", "system", "settings", "catalogue", "tenant_onboarding", "tenant_access", "s3_access",
-         "buckets", "usage_billing", "capacity_alerts", "audit_reports"]
+         "buckets", "usage_billing", "capacity_alerts", "audit_reports", "operations"]
 
 
 def load_all(app) -> None:

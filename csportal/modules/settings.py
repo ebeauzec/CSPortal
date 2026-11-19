@@ -201,34 +201,24 @@ def register(app):
                                                                          f"{'Demo mode: results are illustrative.' if cfg.demo else ''}</span></p>" + str(_results_table(steps)) +
                                                                          "<p>" + str(ui.link("/grid", "Back to the Storage grid page", "btn")) + "</p>"))), "/grid")
 
-    @app.route("admin", "POST", "/grid", perm=perm_edit)
+    @app.route("admin", "POST", "/grid", perm=perm_edit, reauth=True)
     def grid_save(ctx):
         old = S.load_grid(cfg, db)
         conn, errs = _conn_from_form(ctx, old)
         if errs:
             return _grid_page(ctx, conn, errs)
-        S.save_grid(db, conn)
-        changed = ["settings"]
-        if ctx.f("password"):
-            S.secret_put(db, app.box, S.GRID_SECRET, ctx.f("password"))
-            changed.append("password changed")
-        elif ctx.f("clear_password"):
-            S.secret_clear(db, S.GRID_SECRET)
-            changed.append("saved password removed")
-        fp = ",".join(c["sha256"][:11] for c in S.cert_infos(conn.ca_pem)[0])
-        ctx.audit("grid.settings.update", "", f"nodes=[{S.format_nodes(conn.nodes).replace(chr(10), '; ')}] api={conn.api_version} account={conn.account_id} "
-                                              f"user={conn.username} endpoints=[{S.format_endpoints(conn.endpoints).replace(chr(10), '; ')}] ca={fp or 'none'} "
-                                              f"timeout={conn.timeout} ({', '.join(changed)})")
-        if cfg.demo:
-            ctx.flash("Saved. Demo mode keeps using the simulated grid.")
+        from .. import approvals
+        payload = {"conn": conn.to_json(), "password": ctx.f("password"), "clear_password": bool(ctx.f("clear_password"))}
+        try:
+            done, msg = approvals.submit(app, "grid.settings", "grid", f"Change the grid connection: {len(conn.nodes)} admin node(s), "
+                                         f"{len(conn.endpoints)} endpoint(s), user {conn.username or '-'}"
+                                         + (", new password" if payload["password"] else ""),
+                                         payload, ctx.sess.email, ctx.sess.user_id, ctx.req.ip)
+        except approvals.ApprovalError as e:
+            ctx.flash("Error: " + str(e))
             return redirect("/grid")
-        from ..bootstrap import build_backend
-        app.backend = build_backend(cfg, db, app.box, {"app": app})
-        steps = gridcheck.diagnose(conn, S.grid_password(cfg, db, app.box))
-        result = gridcheck.summary(steps)
-        S.save_test(db, result)
-        ctx.flash("Saved and applied. " + ("The connection test passed." if result["ok"] else f"The connection test found {result['failed']} problem(s): see the result below."))
-        return redirect("/grid")
+        ctx.flash(msg)
+        return redirect("/grid" if done else "/approvals")
 
     # ------------------------------------------------------------------ all settings
     @app.route("admin", "GET", "/settings", perm="system.view")

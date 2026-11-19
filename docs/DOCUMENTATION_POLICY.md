@@ -40,6 +40,8 @@ whoever works on the code, in the same commit as the change it describes.
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Production install, hardening checklist, backup, upgrade |
 | [DEMO.md](DEMO.md) | Demo mode, sample data, demonstration path |
 | [docs/README.md](README.md) | Index of every page |
+| [runbooks/](runbooks/README.md) | One page per operating task; a change to the commands, settings or screens a runbook uses changes the runbook in the same commit |
+| [../deploy/kubernetes/README.md](../deploy/kubernetes/README.md) | Kubernetes manifests; change with the Dockerfile, ports, probes and data layout |
 | [OPERATIONS.md](OPERATIONS.md) | Run, recover, diagnose |
 | [DECISIONS.md](DECISIONS.md) | Decision log |
 | [ROADMAP.md](ROADMAP.md) | Releases and order of work |

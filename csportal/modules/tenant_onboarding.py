@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from .. import services
+from .. import approvals, services
 from ..auth import AuthError
 from ..util import GB, human_bytes, valid_email
 from ..web import ui
@@ -168,14 +168,17 @@ def register(app):
         app.audit.record("customer.module", ctx.sess.email, "user", c["id"], ctx.f("module"), "on" if ctx.f("on") == "1" else "off", ctx.req.ip)
         return redirect(f"/customers/{c['id']}")
 
-    @app.route("admin", "POST", "/customers/{cid}/close", perm="customers.delete", module="tenant-onboarding")
+    @app.route("admin", "POST", "/customers/{cid}/close", perm="customers.delete", module="tenant-onboarding", reauth=True)
     def close(ctx):
         c = _c(ctx)
         if ctx.f("confirm") != c["name"]:
             ctx.flash("Error: The name did not match. Nothing was changed.")
             return redirect(f"/customers/{c['id']}")
-        services.suspend_customer(app, c["id"], True, ctx.sess.email, ctx.req.ip)
-        app.db.run("UPDATE customers SET state='closed', closed_at=? WHERE id=?", (services.iso(), c["id"]))
-        app.audit.record("customer.close", ctx.sess.email, "user", c["id"], c["name"], "", ctx.req.ip)
-        ctx.flash("Account closed.")
-        return redirect("/customers")
+        try:
+            done, msg = approvals.submit(app, "customer.close", c["id"], f"Close the account of {c['name']}", {"cid": c["id"]},
+                                         ctx.sess.email, ctx.sess.user_id, ctx.req.ip)
+        except approvals.ApprovalError as e:
+            ctx.flash("Error: " + str(e))
+            return redirect(f"/customers/{c['id']}")
+        ctx.flash(msg)
+        return redirect("/customers" if done else "/approvals")

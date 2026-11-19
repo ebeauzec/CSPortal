@@ -135,6 +135,7 @@ class Route:
     public: bool
     mfa_exempt: bool
     raw: str
+    reauth: bool = False
 
 
 def _compile(path: str) -> re.Pattern:
@@ -145,9 +146,10 @@ class Router:
     def __init__(self):
         self.routes: list[Route] = []
 
-    def add(self, surface: str, method: str, path: str, handler, perm=None, module=None, public=False, mfa_exempt=False):
+    def add(self, surface: str, method: str, path: str, handler, perm=None, module=None, public=False, mfa_exempt=False,
+            reauth=False):
         for s in (["customer", "admin"] if surface == "both" else [surface]):
-            self.routes.append(Route(s, method.upper(), _compile(path), handler, perm, module, public, mfa_exempt, path))
+            self.routes.append(Route(s, method.upper(), _compile(path), handler, perm, module, public, mfa_exempt, path, reauth))
 
     def match(self, surface: str, method: str, path: str):
         path_known = False
@@ -196,11 +198,19 @@ class App:
         self.job_runner = None
 
     # ---------------------------------------------------------------- registration
-    def route(self, surface, method, path, perm=None, module=None, public=False, mfa_exempt=False):
+    def route(self, surface, method, path, perm=None, module=None, public=False, mfa_exempt=False, reauth=False):
+        """`reauth=True` asks the person to confirm their password (and code) again when they have not done so recently."""
         def deco(fn):
-            self.router.add(surface, method, path, fn, perm, module, public, mfa_exempt)
+            self.router.add(surface, method, path, fn, perm, module, public, mfa_exempt, reauth)
             return fn
         return deco
+
+    def replay(self, req: Request, path: str, form: dict) -> Response:
+        """Run a form post again after re-authentication. Only routes that ask for it can be replayed."""
+        route, _, _ = self.router.match(req.surface, "POST", path)
+        if not route or not route.reauth:
+            return redirect("/")
+        return self._dispatch(Request("POST", path, {}, form, req.headers, req.cookies, req.ip, req.surface, req.rid, req.host))
 
     def register_module(self, manifest: dict):
         self.modules[manifest["id"]] = manifest
@@ -328,6 +338,11 @@ class App:
             return html_response(ui.page(Ctx(self, req, sess, params, customer, route), "Not available",
                                          "<p>This feature is not part of your plan. Contact support to add it.</p>"), 404)
         ctx = Ctx(self, req, sess, params, customer, route)
+        if route.reauth and sess and not self.auth.reauth_fresh(sess):
+            if req.method == "POST":
+                return html_response(ui.reauth_page(ctx, req.path, req.form), 200)
+            qs = ("?" + urllib.parse.urlencode(req.query)) if req.query else ""
+            return redirect("/reauth?next=" + urllib.parse.quote(req.path + qs))
         try:
             resp = route.handler(ctx)
         except BackendError as e:

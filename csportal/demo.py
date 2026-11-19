@@ -64,7 +64,7 @@ def demo_accounts(surface: str) -> list[dict]:
 
 def _wipe(app) -> None:
     for t in ("alert_events", "alert_rules", "quota_requests", "statements", "usage_samples", "invitations", "sessions", "outbox",
-              "notices", "audit", "users", "customers", "plans", "secrets", "jobs_state"):
+              "notices", "audit", "audit_checkpoints", "audit_anchor", "approvals", "users", "customers", "plans", "secrets", "jobs_state"):
         app.db.run(f"DELETE FROM {t}")
     app.db.run("DELETE FROM settings WHERE key IN ('modules_off')")
     if hasattr(app.backend, "reset"):

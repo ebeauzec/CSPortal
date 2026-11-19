@@ -28,6 +28,9 @@ class StorageBackend:
         raise NotImplementedError
 
     # --- tenants (CSP side)
+    def list_tenants(self) -> list[dict]:
+        """Every tenant account on the grid: [{ref, name, quota_bytes}]. Used by the drift check."""
+        raise NotImplementedError
     def create_tenant(self, name: str, quota_bytes: int, features: dict) -> str: raise NotImplementedError
     def update_tenant(self, ref: str, quota_bytes: int | None = None, features: dict | None = None) -> None: raise NotImplementedError
     def set_suspended(self, ref: str, suspended: bool) -> None: raise NotImplementedError

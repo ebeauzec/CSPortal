@@ -6,7 +6,9 @@ import threading
 import time
 import traceback
 
-from . import logs, services
+import json
+
+from . import approvals, logs, ops, services
 from .util import iso
 
 jlog = logging.getLogger("csportal.job")
@@ -23,6 +25,13 @@ class JobRunner:
         self.add("alert-check", jc["alert_check_minutes"] * 60, lambda: f"{services.check_alerts(app)} alert(s) sent")
         self.add("month-close", 6 * 3600, self._month)
         self.add("session-purge", 3600, lambda: f"{app.auth.purge_expired()} session(s) removed")
+        self.add("audit-checkpoint", jc["audit_checkpoint_minutes"] * 60, self._checkpoint)
+        self.add("audit-retention", 24 * 3600, self._retention)
+        self.add("approval-expiry", 3600, lambda: f"{approvals.expire(app)} request(s) expired")
+        if jc["backup_hours"] > 0:
+            self.add("backup", jc["backup_hours"] * 3600, self._backup)
+        if jc["drift_hours"] > 0:
+            self.add("drift-check", jc["drift_hours"] * 3600, self._drift)
         if app.cfg.demo and hasattr(app.backend, "advance"):
             self.add("demo-growth", 120, self._demo)
 
@@ -38,6 +47,27 @@ class JobRunner:
     def _month(self) -> str:
         n = sum(services.close_period(self.app, p) for p in services.closed_periods_due(self.app))
         return f"{n} statement(s) created"
+
+    def _checkpoint(self) -> str:
+        return "checkpoint signed" if self.app.audit.checkpoint() else "nothing new to sign"
+
+    def _retention(self) -> str:
+        r = self.app.audit.prune(self.app.cfg.d["security"]["audit_retention_days"], self.app.cfg.data_dir / "audit-archive")
+        if r["refused"]:
+            raise RuntimeError(r["refused"])
+        return f"{r['pruned']} record(s) archived and removed" + (f" ({r['archive']})" if r.get("archive") else "")
+
+    def _backup(self) -> str:
+        r = ops.backup_now(self.app)
+        return f"{r['file']} ({r['bytes']:,} bytes); {r['removed_old']} old backup(s) removed"
+
+    def _drift(self) -> str:
+        rep = ops.drift_report(self.app)
+        self.app.db.set_setting("drift.last", json.dumps({"at": iso(), **rep}))
+        msg = ops.drift_summary(rep)
+        if not rep["ok"]:
+            raise RuntimeError(msg)
+        return msg
 
     def _demo(self) -> str:
         self.app.backend.advance()

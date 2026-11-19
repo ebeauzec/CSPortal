@@ -21,11 +21,11 @@ Criteria 2017, with the 2022 points of focus)**. See ADR-007 in [../DECISIONS.md
 
 1. **The StorageGRID connector is not verified on a real grid** (affects availability and integrity evidence).
 2. **No independent penetration test.** (Python dependencies and the built image are scanned in CI; the host is not.)
-3. **Audit retention is not enforced.** `security.audit_retention_days` is a configuration value only; no
-   purge or archive job exists. The audit log grows until the CSP archives the database. A purge must keep
-   the hash chain verifiable, so it needs a signed checkpoint design first.
-4. **No four-eyes approval or re-authentication** for destructive provider actions yet.
-5. **Single node:** no redundancy inside the product (ISO 8.14, SOC 2 A1.2). The CSP must provide it around it.
+3. **Single node:** no redundancy inside the product (ISO 8.14, SOC 2 A1.2). The CSP must provide it around it.
+4. **Archive custody.** Retention moves old audit records to files in the data folder. Moving those files to
+   long-term storage, and proving the restore of them, is the CSP's job.
+5. **Owner decisions and CSP-side evidence** (identity model ADR-004, host and grid scanning, a real restore test)
+   cannot be closed by code. See [../ROADMAP.md](../ROADMAP.md#what-code-cannot-close).
 
 ## ISO/IEC 27001:2022 Annex A
 
@@ -35,7 +35,7 @@ Criteria 2017, with the 2022 points of focus)**. See ADR-007 in [../DECISIONS.md
 |---|---|---|---|---|
 | 5.1 Policies for information security | Security design and rules documented | docs/SECURITY.md | Partial | Own policy set; approve and publish it |
 | 5.2 Roles and responsibilities | Defined provider roles (super administrator, operations, finance, support) and customer roles | auth.py | Provided | Assign people to roles |
-| 5.3 Segregation of duties | Finance cannot edit customers; support cannot provision; roles limited per task. Second approver for destructive actions is planned | auth.py | Partial | Operate roles without sharing accounts |
+| 5.3 Segregation of duties | Finance cannot edit customers; support cannot provision; roles limited per task. Closing a customer, changing the grid connection and removing staff can require a second super administrator (`security.four_eyes`) | auth.py, approvals.py | Provided (when the option is on) | Operate roles without sharing accounts |
 | 5.8 Information security in project management | Repository rules, tests, review checklist in the documentation policy | docs/DOCUMENTATION_POLICY.md | Partial | Own project process |
 | 5.9 Inventory of information and assets | Customer, plan, module, user and tenant records; module list; dependency list | database; THIRD_PARTY_NOTICES.md | Partial | Asset register for hosts and grid |
 | 5.12 / 5.13 Classification and labelling | Secrets, personal data and audit data are separate record types; personal data limited to name, e-mail, role | db.py | Partial | Classification scheme |
@@ -47,13 +47,13 @@ Criteria 2017, with the 2022 points of focus)**. See ADR-007 in [../DECISIONS.md
 | 5.19 to 5.22 Supplier relationships | Dependency list and licences; one direct third-party package plus two it needs, all pinned; bill of materials per build | THIRD_PARTY_NOTICES.md | Partial | Supplier assessments (hosting, mail relay, NetApp) |
 | 5.23 Cloud services | Product is itself a cloud service component; documents shared responsibility | docs/COMPLIANCE.md | Partial | Cloud-service policy |
 | 5.24 to 5.28 Incident management | Request ids, security log, audit log, diagnostic bundle, log viewer support detection and investigation | logs.py, audit.py, modules/system.py | Partial | Incident process, on-call, customer notification |
-| 5.29 / 5.30 Continuity and ICT readiness | Backup command, restore steps, health page. No clustering | docs/DEPLOYMENT.md | Partial | Recovery objectives, tested restores, standby host |
+| 5.29 / 5.30 Continuity and ICT readiness | Automatic checked backups, restore and rollback runbooks, health page, Kubernetes manifests for one replica. No clustering | docs/DEPLOYMENT.md, docs/runbooks/ | Partial | Recovery objectives, tested restores, standby host |
 | 5.31 Legal and contractual requirements | Licence and notice files; data-protection design | LICENSE, LEGAL.md, docs/COMPLIANCE.md | Partial | Contracts and DPAs with customers |
 | 5.32 Intellectual property | Ownership and attribution terms | LICENSE | Provided | Respect licence terms |
-| 5.33 Protection of records | Hash-chained audit log; immutable closed statements | audit.py, services.py | Partial | Retention and archive (gap 3) |
-| 5.34 Privacy and PII | Data minimisation; no telemetry; no outside calls | docs/COMPLIANCE.md | Partial | Lawful basis, notices, rights handling. Export and deletion of a person's data is planned |
+| 5.33 Protection of records | Hash-chained audit log with signed checkpoints; retention archives to checksummed files and keeps a signed anchor; immutable closed statements | audit.py, services.py, tests/test_ops.py | Provided | Move archive files to long-term storage; test a restore |
+| 5.34 Privacy and PII | Data minimisation; no telemetry; no outside calls | docs/COMPLIANCE.md | Partial | Lawful basis, notices, rights handling. A person's portal data can be exported and erased (audit records stay until retention ends) |
 | 5.35 / 5.36 Independent review, compliance with policies | Automated tests, repository rules check, audit-chain verification command | tests/, tools/check_repo.py | Partial | Internal audit; external review |
-| 5.37 Documented operating procedures | Deployment, operations, demo, runbooks list | docs/ | Partial | Site runbooks (runbook pages still to be written) |
+| 5.37 Documented operating procedures | Deployment, operations, demo, nine runbooks | docs/, docs/runbooks/ | Provided | Site-specific procedures and the change record |
 
 ### 6. People controls
 
@@ -72,7 +72,7 @@ master key apart from the data (docs/DEPLOYMENT.md).
 | Control | What CSPortal provides | Where | State | CSP responsibility |
 |---|---|---|---|---|
 | 8.1 User endpoint devices | Not applicable to the product | | CSP | Endpoint policy for staff |
-| 8.2 Privileged access rights | Super administrator limited to named staff; staff MFA mandatory outside demo mode | auth.py | Partial | Keep the group small; four-eyes planned |
+| 8.2 Privileged access rights | Super administrator limited to named staff; staff MFA mandatory outside demo mode | auth.py | Partial | Keep the group small; switch four-eyes on |
 | 8.3 Information access restriction | Customer-scoped accessor; permission checks; tested cross-customer isolation | db.py, tests | Provided | |
 | 8.4 Access to source code | Repository access controlled on GitHub | repository | CSP | Repository permissions and branch protection |
 | 8.5 Secure authentication | MFA (TOTP), lock-out, rate limits, equal timing, short sessions, `__Host-` cookies over TLS | auth.py, web/core.py | Provided | WebAuthn planned |
@@ -91,7 +91,7 @@ master key apart from the data (docs/DEPLOYMENT.md).
 | 8.19 Software installation | Single image; no plug-in loading from outside | Dockerfile | Provided | Image provenance |
 | 8.20 to 8.22 Network security, services, segregation | Admin console on a separate private listener; refuses proxy headers; strict TLS to the grid; outbound limited to configured endpoints | web/core.py, config.py | Provided | Firewalls, segmentation, WAF |
 | 8.23 Web filtering | Not applicable | | CSP | |
-| 8.24 Use of cryptography | AES-256-GCM for stored secrets, scrypt, TLS 1.2 minimum, SHA-256 audit chain, random tokens from the OS | crypto.py | Provided | Key custody, rotation (rotation command planned) |
+| 8.24 Use of cryptography | AES-256-GCM for stored secrets, scrypt, TLS 1.2 minimum, SHA-256 audit chain, random tokens from the OS | crypto.py | Provided | Key custody; run `rotate-key` on a schedule |
 | 8.25 to 8.28 Secure development, requirements, architecture, coding | Threat model, security rules, parameterised queries only, output escaping by default, strict content security policy | docs/SECURITY.md, db.py, web/ui.py | Provided | |
 | 8.29 Security testing | Automated tests for authorisation matrix, isolation, anti-forgery, lock-out, secret scrubbing. **No independent test yet** | tests/ | Partial | Commission a penetration test |
 | 8.30 Outsourced development | Not applicable | | CSP | |
@@ -102,8 +102,8 @@ master key apart from the data (docs/DEPLOYMENT.md).
 ## SOC 2 Trust Services Criteria
 
 Security (the common criteria, CC) is always in scope. Availability and Confidentiality are included here
-because a storage service is judged on them. **Processing integrity** and **Privacy** are optional categories and
-are not mapped yet; confirm with your auditor which categories your report will cover.
+because a storage service is judged on them. **Processing integrity** and **Privacy** are optional categories; they are
+mapped below. Confirm with your auditor which categories your report will cover.
 
 | Criterion | What CSPortal contributes | State | CSP responsibility |
 |---|---|---|---|
@@ -119,23 +119,49 @@ are not mapped yet; confirm with your auditor which categories your report will 
 | **CC6.6** Boundary protection | Private admin listener; strict TLS; no inbound except the two surfaces | Provided | Firewalls and WAF |
 | **CC6.7** Restricting transmission, movement, removal | TLS; no bulk data path through the portal; exports are logged | Provided | |
 | **CC6.8** Preventing and detecting malicious software | Not applicable to the product | CSP | Host controls |
-| **CC7.1** Detect configuration changes and vulnerabilities | Dependency and image scans in CI; reconcile and conformance checks are planned/partial | Partial | Scan the host and grid |
+| **CC7.1** Detect configuration changes and vulnerabilities | Dependency and image scans in CI; daily drift check against the grid; conformance check; settings weaker than recommended are listed | Partial | Scan the host and grid |
 | **CC7.2** Monitoring for anomalies | Security log events; log forwarding | Partial | Central monitoring and alerting |
 | **CC7.3 / 7.4 / 7.5** Evaluate, respond to, recover from incidents | Diagnostic bundle, request ids, audit trail, backup and restore | Partial | Incident response plan and testing |
 | **CC8.1** Change management | Version control, tests, changelog, forward-only migrations | Partial | Approval and deployment process |
 | **CC9.1 / 9.2** Risk mitigation, vendors | Few dependencies, listed; documented shared responsibility | Partial | Business continuity, vendor management |
 | **A1.1** Capacity | Quota and capacity views, alerts | Partial | Capacity monitoring of infrastructure |
-| **A1.2** Environmental protections, backup, recovery infrastructure | Backup command; no redundancy in product | Partial | Facilities, redundancy |
-| **A1.3** Recovery testing | Restore procedure documented; audit verification after restore | Partial | Run and record restore tests |
+| **A1.2** Environmental protections, backup, recovery infrastructure | Automatic integrity-checked backups with retention; no redundancy in the product | Partial | Facilities, redundancy |
+| **A1.3** Recovery testing | Restore runbook with checks; audit verification after restore | Partial | Run and record restore tests |
 | **C1.1** Identify and maintain confidential information | Secrets encrypted; personal data minimised; customer data separated by scope | Provided | Classification and retention |
-| **C1.2** Dispose of confidential information | Customer close; grid deletion by provider; secure deletion of personal data planned | Partial | Disposal procedure and evidence |
+| **C1.2** Dispose of confidential information | Customer close; grid deletion by provider; a person's portal data can be erased (audit records stay until retention ends) | Partial | Disposal procedure and evidence |
+
+### Processing integrity (optional category)
+
+| Criterion | What CSPortal contributes | State | CSP responsibility |
+|---|---|---|---|
+| **PI1.1** Definitions of processing | Use cases and customer controls state what each function does and its checks | Provided | Customer-facing service description |
+| **PI1.2** Inputs complete and accurate | Name, quota, policy, lifecycle, CORS and Object Lock inputs are validated before the grid sees them; forms carry anti-forgery tokens | Provided | |
+| **PI1.3** Processing complete and accurate | Usage is sampled on a schedule and failures are reported; month close creates one statement per customer and period; closed statements are immutable and corrected only by linked adjustments; the daily drift check compares portal and grid | Partial (not verified against a real grid's usage figures) | Reconcile statements with invoices |
+| **PI1.4** Outputs complete and accurate | Statements and CSV exports are generated from the stored figures and shown only to authorised roles | Provided | |
+| **PI1.5** Inputs and outputs stored as defined | Backups, audit archive and retention described; statements are kept | Partial | Offsite copies and restore proof |
+
+### Privacy (optional category)
+
+| Criterion | What CSPortal contributes | State | CSP responsibility |
+|---|---|---|---|
+| **P1** Notice | Legal text and support contact are configurable in branding | Partial | Privacy notice and its wording |
+| **P2** Choice and consent | Not applicable to the product: accounts are created by invitation for a contract | CSP | Lawful basis and consent where needed |
+| **P3** Collection | Only name, e-mail, role and sign-in events are collected; no telemetry, no outside calls | Provided | |
+| **P4** Use, retention and disposal | Configurable audit retention with archive; accounts, sessions, invitations and stored mail can be erased by e-mail address | Provided | Retention schedule; archive disposal |
+| **P5** Access | Export of everything held about an address (JSON) | Provided | Identity check before answering a request |
+| **P6** Disclosure and notification | Data goes only to the configured grid and mail relay; mail copies lose their links after delivery | Partial | Processor agreements; breach notification |
+| **P7** Quality | People can see their account; administrators correct names and roles | Partial | |
+| **P8** Monitoring and enforcement | Audit log records exports and erasures | Partial | Complaint handling and review |
 
 ## Evidence the product can produce
 
 | Evidence | How |
 |---|---|
 | Who changed what, when, from where | Admin console Audit log (filterable); customer Activity page with CSV download (customer view only) |
-| Proof the audit log was not altered | `python -m csportal verify-audit`; Audit log page shows chain state |
+| Proof the audit log was not altered | `python -m csportal verify-audit` (chain, signed checkpoints, retention anchor); Audit log and Operations pages show the state; archive files carry checksums |
+| Approvals and who decided | Approvals page; audit actions `approval.*` |
+| Backups taken and checked | Operations page; job state in the diagnostic bundle (`backups.json`) |
+| Drift between portal and grid | Operations page; `python -m csportal drift` |
 | Access list for review | Admin console: customers and their users; staff users page |
 | Configuration in force (secrets removed) | Diagnostic bundle, `config.json` |
 | System version, modules, schema | Diagnostic bundle, `system.json` |
@@ -145,19 +171,23 @@ are not mapped yet; confirm with your auditor which categories your report will 
 
 ## Work to close the gaps
 
-| Gap | Planned work | Controls it helps |
+| Gap | Work | Controls it helps |
 |---|---|---|
 | Host and grid scanning | Not a product function: the CSP scans the host and the StorageGRID nodes. Python dependency scan, image scan and bill of materials are done in CI | ISO 8.8; SOC 2 CC7.1 |
-| Audit retention | Retention job with signed chain checkpoints | ISO 5.33; SOC 2 CC4, C1.2 |
-| Four-eyes and re-authentication | Approval workflow for delete, suspend all, key rotation | ISO 5.3, 8.2; SOC 2 CC6.3 |
-| Key rotation | Master-key and grid-credential rotation commands | ISO 8.24 |
-| Personal-data export and deletion | Admin action and customer request | ISO 5.34; SOC 2 C1.2 |
 | Redundancy | Server database and replicas | ISO 8.14; SOC 2 A1.2 |
 | Penetration test | Independent test and fixed findings | ISO 8.29; SOC 2 CC4, CC7 |
-| Runbooks | Write the pages listed in docs/OPERATIONS.md | ISO 5.37; SOC 2 CC5 |
-| Drift detection | Reconcile job comparing portal and grid | SOC 2 CC7.1 |
 
 ## Keeping this page true
 
 Update the state of a row in the same commit that changes the control. When a gap above is closed, move it
 out of the table and note it in [CHANGELOG.md](../../CHANGELOG.md).
+
+## Closed since 0.1.0
+
+| Gap | How it was closed | Where |
+|---|---|---|
+| Audit retention not enforced | Signed checkpoints, daily archive and removal with a signed anchor; refuses to act on a chain that does not verify | audit.py, jobs.py, tests/test_ops.py |
+| No re-authentication or four-eyes | `reauth` routes and approval workflow (`security.reauth_minutes`, `security.four_eyes`) | approvals.py, auth.py, web/core.py |
+| No key rotation | `rotate-key` command, all-or-nothing | ops.py |
+| No personal-data export or deletion | `/privacy`, `person-export`, `person-erase` | ops.py, modules/operations.py |
+| No drift detection | Daily drift job, Operations page, `drift` command | ops.py, jobs.py |

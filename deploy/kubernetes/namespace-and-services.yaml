@@ -1,0 +1,72 @@
+# Namespace, services and network policy. NOT TESTED ON A CLUSTER.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: csportal
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+# Customer portal: reached only through your ingress controller.
+apiVersion: v1
+kind: Service
+metadata:
+  name: csportal-customer
+  namespace: csportal
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: csportal }
+  ports:
+    - { name: customer, port: 8443, targetPort: customer }
+---
+# Admin console: ClusterIP only. Never publish it through the public ingress. Reach it through a private ingress,
+# a VPN or `kubectl port-forward` (see README.md).
+apiVersion: v1
+kind: Service
+metadata:
+  name: csportal-admin
+  namespace: csportal
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: csportal }
+  ports:
+    - { name: admin, port: 8444, targetPort: admin }
+---
+# Headless service for the StatefulSet's identity.
+apiVersion: v1
+kind: Service
+metadata:
+  name: csportal
+  namespace: csportal
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: csportal }
+  ports:
+    - { name: customer, port: 8443 }
+---
+# Who may reach the pod. Edit the selectors to match your ingress controller and your private admin access.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: csportal
+  namespace: csportal
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: csportal }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-nginx }     # your ingress controller's namespace
+      ports: [{ port: 8443 }]
+    - from:
+        - namespaceSelector:
+            matchLabels: { csportal-admin-access: "true" }                  # a namespace you label for administrators only
+      ports: [{ port: 8444 }]
+  egress:
+    - to:                                                                   # DNS
+        - namespaceSelector: {}
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    - to:                                                                   # the grid and the mail relay: use your real addresses
+        - ipBlock: { cidr: 203.0.113.0/24 }
+      ports: [{ port: 443 }, { port: 587 }]

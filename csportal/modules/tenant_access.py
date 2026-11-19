@@ -131,7 +131,7 @@ def register(app):
             ctx.flash("Invitation cancelled.")
         return redirect("/team")
 
-    @app.route("customer", "POST", "/team/role", perm="access.edit", module="tenant-access")
+    @app.route("customer", "POST", "/team/role", perm="access.edit", module="tenant-access", reauth=True)
     def team_role(ctx):
         u = _person(ctx, ctx.f("uid"))
         role = ctx.f("role")
@@ -163,7 +163,7 @@ def register(app):
             ctx.flash("Account unlocked.")
         return redirect("/team")
 
-    @app.route("customer", "POST", "/team/remove", perm="access.edit", module="tenant-access")
+    @app.route("customer", "POST", "/team/remove", perm="access.edit", module="tenant-access", reauth=True)
     def team_remove(ctx):
         u = _person(ctx, ctx.f("uid"))
         if u and u["id"] != ctx.sess.user_id:
@@ -177,7 +177,7 @@ def register(app):
             ctx.flash("Person removed.")
         return redirect("/team")
 
-    @app.route("customer", "POST", "/team/mfa-reset", perm="access.edit", module="tenant-access")
+    @app.route("customer", "POST", "/team/mfa-reset", perm="access.edit", module="tenant-access", reauth=True)
     def team_mfa_reset(ctx):
         u = _person(ctx, ctx.f("uid"))
         if u and u["id"] != ctx.sess.user_id:
@@ -284,7 +284,7 @@ def register(app):
         ctx.flash("Group saved.")
         return redirect("/users")
 
-    @app.route("customer", "POST", "/groups/delete", perm="access.edit", module="tenant-access")
+    @app.route("customer", "POST", "/groups/delete", perm="access.edit", module="tenant-access", reauth=True)
     def group_del(ctx):
         app.backend.delete_group(ctx.ref, ctx.f("group"))
         ctx.audit("group.delete", ctx.f("group"))
@@ -331,7 +331,7 @@ def register(app):
         ctx.flash("Updated.")
         return redirect("/users")
 
-    @app.route("customer", "POST", "/users/delete", perm="access.edit", module="tenant-access")
+    @app.route("customer", "POST", "/users/delete", perm="access.edit", module="tenant-access", reauth=True)
     def user_del(ctx):
         app.backend.delete_user(ctx.ref, ctx.f("user"))
         ctx.audit("storage_user.delete", ctx.f("user"))

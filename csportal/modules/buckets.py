@@ -178,7 +178,7 @@ def register(app):
         ctx.flash(f"Versioning {state}.")
         return _back(ctx.params["name"])
 
-    @app.route("customer", "POST", "/buckets/{name}/public", perm="access.edit", module="buckets")
+    @app.route("customer", "POST", "/buckets/{name}/public", perm="access.edit", module="buckets", reauth=True)
     def public(ctx):
         want = ctx.f("public") == "1"
         name = ctx.params["name"]
@@ -217,7 +217,7 @@ def register(app):
         return _back(b["name"])
 
     # ------------------------------------------------------------------ Object Lock default retention
-    @app.route("customer", "POST", "/buckets/{name}/lock", perm="buckets.edit", module="buckets")
+    @app.route("customer", "POST", "/buckets/{name}/lock", perm="buckets.edit", module="buckets", reauth=True)
     def lock_set(ctx):
         name = ctx.params["name"]
         b = app.backend.get_bucket(ctx.ref, name)
@@ -397,7 +397,7 @@ def register(app):
         ctx.flash("Unencrypted connections are now refused." if on else "Unencrypted connections are allowed again.")
         return _back(name, "/access")
 
-    @app.route("customer", "POST", "/buckets/{name}/access/policy", perm="access.edit", module="buckets")
+    @app.route("customer", "POST", "/buckets/{name}/access/policy", perm="access.edit", module="buckets", reauth=True)
     def policy_save(ctx):
         name = ctx.params["name"]
         text = ctx.f("policy")
@@ -411,7 +411,7 @@ def register(app):
         ctx.flash("Policy saved.")
         return _back(name, "/access")
 
-    @app.route("customer", "POST", "/buckets/{name}/delete", perm="buckets.delete", module="buckets")
+    @app.route("customer", "POST", "/buckets/{name}/delete", perm="buckets.delete", module="buckets", reauth=True)
     def delete(ctx):
         app.backend.delete_bucket(ctx.ref, ctx.params["name"])
         ctx.audit("bucket.delete", ctx.params["name"])

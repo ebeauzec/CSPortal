@@ -36,7 +36,7 @@ def _scrub_cfg(d):
 def build_bundle(app) -> bytes:
     """One portable archive with what is needed to diagnose a problem remotely. No secrets, no object data."""
     buf = io.BytesIO()
-    ok, bad, n = app.audit.verify()
+    v = app.audit.verify_full()
     files: dict[str, str] = {}
     files["system.json"] = json.dumps({
         "product": PRODUCT, "version": __version__, "created": iso(), "python": sys.version, "platform": platform.platform(),
@@ -53,7 +53,14 @@ def build_bundle(app) -> bytes:
         "source_address": gc.source_address, "timeout": gc.timeout, "s3_endpoints": [vars(e) for e in gc.endpoints],
         "active_admin_node": getattr(app.backend, "base", ""), "last_test": S.last_test(app.db),
         "settings_changed_in_console": [r["key"] for r in app.db.all("SELECT key FROM settings WHERE key LIKE 'cfg.%' ORDER BY key")]}, indent=2)
-    files["audit_chain.json"] = json.dumps({"intact": ok, "first_bad_id": bad, "records": n})
+    files["audit_chain.json"] = json.dumps({"intact": v["ok"], "first_bad_id": v["bad_id"], "records": v["rows"], "problems": v["problems"],
+                                           "checkpoints": v["checkpoints"], "archived_up_to_id": v["anchor_id"]}, indent=2)
+    from .. import ops
+    files["backups.json"] = json.dumps(ops.list_backups(app), indent=2)
+    row = app.db.one("SELECT value FROM settings WHERE key='drift.last'")
+    files["drift_last.json"] = row["value"] if row else "{}"
+    files["approvals_waiting.json"] = json.dumps([{"id": r["id"], "kind": r["kind"], "summary": r["summary"], "expires_at": r["expires_at"]}
+                                                  for r in app.db.all("SELECT * FROM approvals WHERE state='pending'")], indent=2)
     files["jobs.json"] = json.dumps([dict(r) for r in app.db.all("SELECT * FROM jobs_state")], indent=2)
     files["customers_summary.json"] = json.dumps([dict(r) for r in app.db.all(
         "SELECT id, state, plan_id, quota_gb, error, created_at FROM customers")], indent=2)
@@ -130,10 +137,14 @@ def register(app):
 
     @app.route("admin", "POST", "/system/backup", perm="system.edit")
     def backup(ctx):
-        dest = app.cfg.data_dir / "backups" / f"csportal-{iso().replace(':', '')}.db"
-        app.db.backup(dest)
-        app.audit.record("system.backup", ctx.sess.email, "user", None, str(dest.name), "", ctx.req.ip)
-        ctx.flash(f"Backup written to {dest}. Store it together with, but separate from, the master key.")
+        from .. import ops
+        try:
+            r = ops.backup_now(app)
+        except RuntimeError as e:
+            ctx.flash("Error: " + str(e))
+            return redirect("/system")
+        app.audit.record("system.backup", ctx.sess.email, "user", None, r["file"], f"{r['bytes']} bytes", ctx.req.ip)
+        ctx.flash(f"Backup {r['file']} written and checked. Keep copies away from this host, and the master key separate from them.")
         return redirect("/system")
 
     # ------------------------------------------------------------ logs
@@ -178,18 +189,19 @@ def register(app):
             ctx.flash("Error: " + str(e))
         return redirect("/staff")
 
-    @app.route("admin", "POST", "/staff/remove", perm="users.manage")
+    @app.route("admin", "POST", "/staff/remove", perm="users.manage", reauth=True)
     def staff_remove(ctx):
+        from .. import approvals
         u = app.db.one("SELECT * FROM users WHERE id=? AND customer_id IS NULL", (ctx.f("uid"),))
         if u and u["id"] != ctx.sess.user_id:
-            if u["role"] == "super-administrator" and app.db.one("SELECT COUNT(*) FROM users WHERE customer_id IS NULL AND role='super-administrator' AND id!=?", (u["id"],))[0] == 0:
-                ctx.flash("Error: There must be at least one super administrator.")
+            try:
+                done, msg = approvals.submit(app, "staff.remove", u["id"], f"Remove staff member {u['email']} ({u['role']})",
+                                             {"uid": u["id"]}, ctx.sess.email, ctx.sess.user_id, ctx.req.ip)
+            except approvals.ApprovalError as e:
+                ctx.flash("Error: " + str(e))
                 return redirect("/staff")
-            app.auth.revoke_user_sessions(u["id"])
-            app.db.run("DELETE FROM invitations WHERE user_id=?", (u["id"],))
-            app.db.run("DELETE FROM users WHERE id=?", (u["id"],))
-            ctx.audit("staff.remove", u["email"])
-            ctx.flash("Removed.")
+            ctx.flash(msg)
+            return redirect("/staff" if done else "/approvals")
         return redirect("/staff")
 
     # ------------------------------------------------------------ branding

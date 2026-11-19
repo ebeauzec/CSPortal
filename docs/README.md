@@ -16,6 +16,8 @@ Start with the [project README](../README.md). Documentation is kept true with t
 | [compliance/CONTROL_MAP.md](compliance/CONTROL_MAP.md) | ISO/IEC 27001 and SOC 2 control map: what is provided, partial, planned or the CSP's job |
 | [ADMIN_CONSOLE.md](ADMIN_CONSOLE.md) | Every setting, where it comes from, and the storage grid connection with its sheet for the grid administrators |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Production install, hardening checklist, backup, upgrade |
+| [runbooks/README.md](runbooks/README.md) | Step-by-step tasks: first start, verifying on a real grid, upgrade and rollback, restore, key rotation, grid credentials, diagnostics, drift, audit archives |
+| [../deploy/kubernetes/README.md](../deploy/kubernetes/README.md) | Kubernetes manifests (one replica) and what you still own; not tested on a cluster |
 | [DEMO.md](DEMO.md) | Demo mode, sample data and a demonstration path |
 | [OPERATIONS.md](OPERATIONS.md) | Running, logging, diagnostic bundle, runbooks |
 | [DECISIONS.md](DECISIONS.md) | Decision log |

@@ -6,8 +6,11 @@ sometimes a dark site. Operations design is therefore part of the product.
 ## Run and recover
 
 - One process, one data directory, one configuration file (see [ARCHITECTURE.md](ARCHITECTURE.md)).
-- **Backup:** copy the data directory (consistent snapshot command provided by the admin console and
-  the command line) and store the master key separately.
+- **Backup:** automatic every `jobs.backup_hours` (default 24), by the admin console (Operations page) or by
+  `python -m csportal backup`. Each copy is opened and integrity-checked as it is made; one that fails is deleted and
+  the job reports an error. The newest `jobs.backup_keep` (default 14) are kept. Copy them off the host and store the
+  master key separately. A backup is a consistent database copy; the audit archive folder (`audit-archive`) and the
+  certificate files are copied separately.
 - **Restore:** put the data directory back and start with the same master key. The start-up check
   reports schema version, module versions and connector state.
 - **Upgrade:** replace the image; migrations run at start-up; a pre-upgrade backup is taken
@@ -39,8 +42,28 @@ python -m csportal init-admin     first administrator; prints a one-time set-pas
 python -m csportal conformance    check connector calls against the grid's own API description
 python -m csportal bundle         write the diagnostic bundle (csportal-diagnostics.zip)
 python -m csportal backup         consistent database copy
-python -m csportal verify-audit   check the audit hash chain (exit code 2 if broken)
+python -m csportal verify-audit   check the audit chain, checkpoints and anchor (exit code 2 if there is a problem)
+python -m csportal rotate-key --new-key-file new.key   re-encrypt everything under a new master key (service stopped)
+python -m csportal drift          compare customers and quotas with the grid (exit code 2 if they differ)
+python -m csportal person-export --email x@example.org   everything held about one address (JSON)
+python -m csportal person-erase  --email x@example.org   remove the person's accounts, sessions and stored mail
 ```
+
+## Scheduled jobs
+
+| Job | Default | What it does |
+|---|---|---|
+| `usage-sample` | 15 min | Reads usage from the grid for every customer |
+| `alert-check` | 15 min | Sends capacity alerts |
+| `month-close` | 6 h | Closes statements for finished months |
+| `session-purge` | 1 h | Removes expired sessions |
+| `audit-checkpoint` | 60 min | Signs the newest audit record |
+| `audit-retention` | 24 h | Archives and removes records past `security.audit_retention_days` |
+| `backup` | 24 h | Writes and checks a database copy; removes the oldest beyond `jobs.backup_keep` |
+| `drift-check` | 24 h | Compares the portal with the grid; marks the job failed when they differ |
+| `approval-expiry` | 1 h | Expires approval requests nobody decided |
+
+A failing job keeps its last error on the System page and in the log.
 
 ## Logging
 
@@ -68,7 +91,5 @@ python -m csportal verify-audit   check the audit hash chain (exit code 2 if bro
 
 ## Runbooks
 
-One page per task in `docs/runbooks/` (to be written with the first release): first start,
-backup and restore, upgrade and rollback, rotate the master key, rotate grid service credentials,
-add a grid, onboard a customer by hand, recover a stuck provisioning, widen the supported StorageGRID
-release range.
+One page per task in [runbooks/](runbooks/README.md). Each states when to use it, what you need, the steps, how to
+check the result and how to go back.

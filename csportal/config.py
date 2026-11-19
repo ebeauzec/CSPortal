@@ -23,6 +23,9 @@ DEFAULTS: dict = {
         "lockout_minutes": 15,
         "min_password_length": 12,
         "audit_retention_days": 2555,
+        "reauth_minutes": 10,
+        "four_eyes": False,
+        "approval_hours": 72,
     },
     "log": {
         "level": "INFO", "dir": "", "max_mb": 20, "backups": 10,
@@ -41,7 +44,8 @@ DEFAULTS: dict = {
     "branding": {"name": "Example Cloud Storage", "product": "Object Storage",
                  "color": "#0b5fff", "support_email": "support@example.net",
                  "support_url": "", "legal_text": ""},
-    "jobs": {"usage_sample_minutes": 15, "alert_check_minutes": 15},
+    "jobs": {"usage_sample_minutes": 15, "alert_check_minutes": 15, "backup_hours": 24, "backup_keep": 14,
+             "drift_hours": 24, "audit_checkpoint_minutes": 60},
 }
 
 

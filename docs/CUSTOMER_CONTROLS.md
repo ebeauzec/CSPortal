@@ -19,6 +19,14 @@ real StorageGRID yet.** The test plan for that is in [STORAGEGRID_INTEGRATION.md
 
 The CSP can switch whole modules off per customer and per plan; a switched-off module is hidden and refused.
 
+## Password confirmation for sensitive actions
+
+These actions ask for the password again (and the authenticator code when multi-factor is on) if the last
+confirmation is older than the CSP's setting (default 10 minutes): change a role, remove a person, reset a person's
+multi-factor, delete a group, storage user, access key or bucket, change public access or the policy of a bucket, set
+Object Lock. Nothing changes until the person confirms; the form is then carried out once. Confirmation is recorded
+as `user.reauth`.
+
 ## 1. People (portal users)
 
 Page: **People (portal)**. Permission to change: `access.edit` (administrator).

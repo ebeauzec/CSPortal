@@ -242,6 +242,10 @@ class StorageGridBackend(StorageBackend):
                 "details": [{"name": e.name, "url": e.url, "region": e.region, "note": e.note} for e in self.s3_endpoints]}
 
     # ------------------------------------------------------------------ tenants
+    def list_tenants(self):
+        return [{"ref": str(a["id"]), "name": a.get("name", ""), "quota_bytes": int((a.get("policy") or {}).get("quotaObjectBytes") or 0)}
+                for a in self._api("grid", "GET", "/grid/accounts") or []]
+
     def create_tenant(self, name, quota_bytes, features) -> str:
         root_pw = secrets.token_urlsafe(24)
         acct = self._api("grid", "POST", "/grid/accounts", {
@@ -250,8 +254,10 @@ class StorageGridBackend(StorageBackend):
                        "allowPlatformServices": bool(features.get("platform_services")),
                        "quotaObjectBytes": int(quota_bytes)}})
         ref = str(acct["id"])
-        # Service identity for the portal, in a dedicated group. The root password is used once and kept
-        # only in encrypted storage as break-glass.
+        # The portal manages the tenant as its root user: the password was set above, so these credentials are known to
+        # work. They are kept only in encrypted storage. A dedicated service user and group exist to own the S3 key used
+        # for bucket settings. (Giving the portal a less powerful management identity needs a documented way to set a
+        # local user's password; that step is listed in docs/STORAGEGRID_INTEGRATION.md.)
         if self.put_creds:
             self.put_creds(ref, {"username": "root", "password": root_pw})
         self._tokens.pop(ref, None)
@@ -259,13 +265,12 @@ class StorageGridBackend(StorageBackend):
             g = self._api(ref, "POST", "/org/groups", {"displayName": "csportal-service", "uniqueName": "group/csportal-service",
                                                       "policies": {"management": {"manageAllContainers": True, "manageEndpoints": True,
                                                                                   "manageOwnS3Credentials": True, "rootAccess": False}}})
-            svc_pw = secrets.token_urlsafe(24)
             u = self._api(ref, "POST", "/org/users", {"fullName": "CSPortal service", "uniqueName": "user/csportal-service",
                                                      "memberOf": [g["id"]], "disable": False})
             key = self._api(ref, "POST", f"/org/users/{u['id']}/s3-access-keys", {})
             if self.put_creds:
-                self.put_creds(ref, {"username": "csportal-service", "password": svc_pw, "s3_key": key.get("accessKey"),
-                                     "s3_secret": key.get("secretAccessKey"), "root_password_note": "stored under root"})
+                # Only the S3 key is added; the management sign-in stays the root user set above.
+                self.put_creds(ref, {"s3_key": key.get("accessKey"), "s3_secret": key.get("secretAccessKey")})
         except BackendError:
             self.delete_tenant(ref)         # do not leave half-created accounts behind
             raise

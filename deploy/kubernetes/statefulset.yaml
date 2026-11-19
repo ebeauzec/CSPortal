@@ -1,0 +1,89 @@
+# CSPortal on Kubernetes. NOT TESTED ON A CLUSTER (see README.md in this folder).
+#
+# Exactly ONE replica: the portal keeps its data in an embedded SQLite database. Do not scale this up and do not
+# put the data volume on a ReadWriteMany class. The StatefulSet gives the pod a stable identity and a volume of its
+# own, and restarts it on another node when the node fails (the volume must be reachable from that node).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: csportal
+  namespace: csportal
+  labels: { app.kubernetes.io/name: csportal }
+spec:
+  serviceName: csportal
+  replicas: 1                      # do not change
+  podManagementPolicy: OrderedReady
+  updateStrategy: { type: RollingUpdate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: csportal }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: csportal }
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: csportal
+          image: registry.example.net/csportal:0.1.0        # replace with your registry and the tag you built
+          imagePullPolicy: IfNotPresent
+          args: ["serve"]
+          ports:
+            - { name: customer, containerPort: 8443 }
+            - { name: admin, containerPort: 8444 }
+          env:
+            - name: CSPORTAL_CONFIG
+              value: /etc/csportal/config.json
+            - name: CSPORTAL_DATA_DIR
+              value: /data
+            - name: CSPORTAL_MASTER_KEY
+              valueFrom: { secretKeyRef: { name: csportal-secrets, key: master-key } }
+            - name: CSPORTAL_GRID_PASSWORD
+              valueFrom: { secretKeyRef: { name: csportal-secrets, key: grid-password } }
+            - name: CSPORTAL_SMTP_PASSWORD
+              valueFrom: { secretKeyRef: { name: csportal-secrets, key: smtp-password, optional: true } }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: config, mountPath: /etc/csportal/config.json, subPath: config.json, readOnly: true }
+            - { name: grid-ca, mountPath: /etc/csportal/grid-ca.pem, subPath: grid-ca.pem, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          startupProbe:
+            httpGet: { path: /healthz, port: customer }
+            periodSeconds: 5
+            failureThreshold: 30          # up to 150 s for migrations at start-up
+          readinessProbe:
+            httpGet: { path: /healthz, port: customer }
+            periodSeconds: 10
+            timeoutSeconds: 4
+          livenessProbe:
+            httpGet: { path: /healthz, port: customer }
+            periodSeconds: 20
+            timeoutSeconds: 4
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes:
+        - name: config
+          configMap: { name: csportal-config }
+        - name: grid-ca
+          configMap: { name: csportal-grid-ca }
+        - name: tmp
+          emptyDir: { medium: Memory, sizeLimit: 64Mi }
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # storageClassName: fast-ssd     # choose a class that survives node loss and is backed up
+        resources:
+          requests: { storage: 10Gi }

@@ -37,12 +37,16 @@ effect. "Use file value" removes a console value so the file value applies again
 | Sessions | `session.idle_minutes` (5 to 720), `session.absolute_hours` (1 to 72) | yes, immediately | |
 | Security | `security.customer_mfa_required` | yes, immediately | Turning it off weakens security: flagged and audited. |
 | Security | `security.lockout_attempts` (3 to 50), `security.lockout_minutes`, `security.min_password_length` (8 to 128) | yes, immediately | |
-| Security | `security.audit_retention_days` | yes | See [SECURITY.md](SECURITY.md) for how retention works. |
+| Security | `security.audit_retention_days` (30 to 36500) | yes | Records older than this are archived and removed once a day. See [SECURITY.md](SECURITY.md#audit-log-integrity-and-retention). |
+| Security | `security.reauth_minutes` (1 to 120, default 10) | yes, immediately | Sensitive actions ask for the password again when the last confirmation is older. Over 30 is flagged. |
+| Security | `security.four_eyes` (default off) | yes, immediately | A second super administrator must approve closing a customer, changing the grid connection and removing staff. Off is flagged. |
+| Security | `security.approval_hours` (1 to 720, default 72) | yes, immediately | Lifetime of an approval request. |
 | Logging | `log.level` | yes, immediately | |
 | Logging | `log.dir`, `log.max_mb`, `log.backups`, `log.json`, `log.syslog` | yes, after a restart | |
 | Outgoing mail | `smtp.host`, `smtp.port`, `smtp.username`, `smtp.from`, `smtp.starttls` | yes, immediately | |
 | Outgoing mail | mail password | write-only | Saved encrypted, or from the environment variable named by `smtp.password_env`. |
 | Background jobs | `jobs.usage_sample_minutes`, `jobs.alert_check_minutes` | yes, after a restart | |
+| Background jobs | `jobs.backup_hours` (0 turns it off), `jobs.backup_keep`, `jobs.drift_hours` (0 turns it off), `jobs.audit_checkpoint_minutes` | yes, after a restart | Backup interval and number of copies kept; drift check interval; how often the audit log is signed. |
 | Storage grid | `backend.type` | no | `simulator` (demo) or `storagegrid`. |
 | Storage grid | admin nodes, endpoints, account, user, password, certificates | yes, see section 3 | |
 | Branding | name, service name, colour, support address, legal text | yes, on the Branding page | |
@@ -169,6 +173,16 @@ tenant, the portal loses control of that tenant.
   contains `grid_connection.json` (settings without secrets, certificate fingerprints, last test result) for remote
   help.
 
+## 3a. Approvals, operations and privacy pages
+
+| Page | Who | What |
+|---|---|---|
+| **Approvals** (`/approvals`) | super administrator | Requests waiting for a second super administrator, and history. Approve or reject someone else's request; withdraw your own. Needs your password again to decide |
+| **Operations** (`/operations`) | operations and super administrator see; super administrator acts | Audit integrity (chain, checkpoints, retention anchor) and **Sign a checkpoint now**; backups with **Back up now** and **Check**; the drift report with **Check now** and **Set grid to portal value** |
+| **Privacy** (`/privacy`) | super administrator | Export everything held about an e-mail address (JSON download) and erase the person's accounts, sessions, invitations and stored mail. Both need your password again |
+
+Which actions need a second approver is set by `security.four_eyes`; see [SECURITY.md](SECURITY.md#sensitive-actions-re-authentication-and-approval).
+
 ## 4. Audit
 
 | Action | When |
@@ -178,3 +192,11 @@ tenant, the portal loses control of that tenant.
 | `grid.settings.update` | The grid connection was saved: nodes, API version, account, user, endpoints, certificate fingerprints, timeout, and whether the password changed. |
 | `grid.test` | A connection test was run. |
 | `grid.handover.download` | The sheet was downloaded. |
+| `user.reauth` | A person confirmed their password again before a sensitive action. |
+| `approval.requested`, `approval.approved`, `approval.rejected`, `approval.expired`, `approval.failed`, `approval.withdrawn` | The approval workflow. |
+| `drift.check`, `drift.quota_aligned` | The drift report was run; a grid quota was set to the portal value. |
+| `system.backup` | A backup was written and checked. |
+| `audit.pruned` | Old audit records were archived and removed (count and id range in the detail). |
+| `system.master_key_rotated` | The master key was rotated (command line). |
+| `tenant.credentials_updated` | A tenant management password was replaced (command line). |
+| `privacy.export`, `privacy.erase` | A person's data was exported or erased (the address appears only as a short hash). |
