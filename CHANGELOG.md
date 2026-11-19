@@ -14,6 +14,9 @@ Neutral release notes. Each entry says what changed and what is **not verified**
 - CI job `image-scan`: builds the production image and scans it (operating-system and Python packages) with
   Trivy 0.76.2, run as a container pinned by digest. A HIGH or CRITICAL finding with a fix available fails the
   build; the JSON report is kept as a build artifact. The same job proves the Dockerfile builds.
+- The first image scan failed on one fixable HIGH finding (`zlib1g` in the Debian 13 base image). The Dockerfile
+  now applies operating-system security updates at build time. Because of that, two builds of the same commit
+  can differ in operating-system package versions; the bill of materials and the scan report record what was built.
 
 **Changed**
 - ADR-007 accepted: compliance scope is ISO/IEC 27001 and SOC 2 (owner decision, 2026-11-19).
