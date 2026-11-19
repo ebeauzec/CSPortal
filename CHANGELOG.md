@@ -2,6 +2,19 @@
 
 Neutral release notes. Each entry says what changed and what is **not verified**.
 
+## Unreleased
+
+**Added**
+- `docs/compliance/CONTROL_MAP.md`: control map for ISO/IEC 27001:2022 Annex A and SOC 2 (security, availability,
+  confidentiality), with the state of each control and the gaps that matter most.
+
+**Changed**
+- ADR-007 accepted: compliance scope is ISO/IEC 27001 and SOC 2 (owner decision, 2026-11-19).
+
+**Not verified**
+- The control map is a mapping of the product's own design to the controls. No audit, certificate or independent
+  review has been done. Control numbering should be checked against the edition the auditor uses.
+
 ## 0.1.0 - 2026-11-19
 
 First release candidate of Release 1.

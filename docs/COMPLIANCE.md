@@ -6,8 +6,8 @@ deployment, not to a code base. This page states what the product commits to and
 the CSP.
 
 > Which regulations and frameworks matter depends on the CSP's customers and jurisdictions. The
-> list below is the working set and is confirmed with the owner (see [DECISIONS.md](DECISIONS.md),
-> ADR-007).
+> security-framework scope is **ISO/IEC 27001 and SOC 2** (owner decision of 2026-11-19, see
+> [DECISIONS.md](DECISIONS.md), ADR-007). The other items below are the working set.
 
 ## 1. Compliance with the StorageGRID API contract
 
@@ -38,10 +38,12 @@ Targets (for example GDPR and comparable laws):
 
 ## 3. Security frameworks
 
-The control set in [SECURITY.md](SECURITY.md) is mapped to ISO/IEC 27001 Annex A themes and the
+The control set in [SECURITY.md](SECURITY.md) is mapped to ISO/IEC 27001:2022 Annex A and the
 SOC 2 trust services criteria (security, availability, confidentiality) in
-`docs/compliance/CONTROL_MAP.md` (to be written with the first release). The map shows, for each
-control, what the product provides, and what the CSP must do in its own operation.
+[compliance/CONTROL_MAP.md](compliance/CONTROL_MAP.md). The map shows, for each control, what the
+product provides, its state (Provided, Partial, Planned or CSP), and what the CSP must do in its own
+operation. It also lists the gaps that matter most. Processing integrity and privacy criteria are not
+mapped yet.
 
 ## 4. Retention and immutability
 

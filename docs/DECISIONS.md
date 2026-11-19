@@ -71,9 +71,11 @@ origin check work. Found by testing in a real browser.
 
 ## ADR-007. Compliance scope
 
-**Status: Open.** Working set in [COMPLIANCE.md](COMPLIANCE.md): public-API-only use, data-protection
-(GDPR-style), ISO/IEC 27001 and SOC 2 control mapping, WCAG 2.2 AA. The owner confirms which
-regulations and frameworks the first CSPs need (for example sector rules, regional residency).
+**Status: Accepted (2026-11-19).** "Fully compliant" means: ISO/IEC 27001:2022 and SOC 2 are the
+security frameworks. The product is mapped to both in [compliance/CONTROL_MAP.md](compliance/CONTROL_MAP.md);
+no certificate or report is claimed, because those belong to the CSP's organisation. The rest of the working
+set in [COMPLIANCE.md](COMPLIANCE.md) stays: public-API-only use, data protection (GDPR-style), WCAG 2.2 AA.
+Sector rules and regional residency are added when a CSP needs them.
 
 ## ADR-008. Documentation is maintained with the code
 

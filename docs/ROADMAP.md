@@ -19,7 +19,7 @@ StorageGRID connector, demo mode, and the modules `catalogue`, `tenant-onboardin
 - Verify the connector on a real grid and record the supported release range (see the verification plan in
   [STORAGEGRID_INTEGRATION.md](STORAGEGRID_INTEGRATION.md)). Use cases UC1 to UC4 are done only when their
   "done when" tests pass against a real grid.
-- Owner decisions: identity model (ADR-004), compliance scope (ADR-007).
+- Owner decision: identity model (ADR-004). Compliance scope is decided (ISO/IEC 27001 and SOC 2, ADR-007).
 - Independent penetration test and accessibility review.
 - Hardening items marked Planned in [SECURITY.md](SECURITY.md): re-authentication for dangerous actions,
   four-eyes approval, key rotation commands, data export and deletion.
@@ -28,7 +28,8 @@ StorageGRID connector, demo mode, and the modules `catalogue`, `tenant-onboardin
 
 `federation`, `platform-services` (including grid federation), `object-browser`, `audit-reports`,
 `support`, remaining bucket features (CORS, default encryption, access-time updates).
-Control map for ISO/IEC 27001 and SOC 2 complete.
+Close the gaps listed in [compliance/CONTROL_MAP.md](compliance/CONTROL_MAP.md) (dependency scan, audit retention,
+four-eyes approval, key rotation, personal-data export and deletion), then map processing integrity and privacy.
 
 ## Release 3. Scale and reach
 

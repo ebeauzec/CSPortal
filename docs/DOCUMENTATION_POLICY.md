@@ -34,6 +34,7 @@ whoever works on the code, in the same commit as the change it describes.
 | [SECURITY.md](SECURITY.md) | Threats, controls, design rules |
 | [STORAGEGRID_INTEGRATION.md](STORAGEGRID_INTEGRATION.md) | Native API use, supported range, API map |
 | [COMPLIANCE.md](COMPLIANCE.md) | Compliance commitments and CSP responsibilities |
+| [compliance/CONTROL_MAP.md](compliance/CONTROL_MAP.md) | ISO/IEC 27001 and SOC 2 control map; its rows change in the same commit as the control |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Production install, hardening checklist, backup, upgrade |
 | [DEMO.md](DEMO.md) | Demo mode, sample data, demonstration path |
 | [docs/README.md](README.md) | Index of every page |

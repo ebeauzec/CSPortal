@@ -12,6 +12,7 @@ Start with the [project README](../README.md). Documentation is kept true with t
 | [SECURITY.md](SECURITY.md) | Threats, controls, design rules and implementation status |
 | [STORAGEGRID_INTEGRATION.md](STORAGEGRID_INTEGRATION.md) | Native API use, conformance check, supported range |
 | [COMPLIANCE.md](COMPLIANCE.md) | What the product commits to and what stays with the CSP |
+| [compliance/CONTROL_MAP.md](compliance/CONTROL_MAP.md) | ISO/IEC 27001 and SOC 2 control map: what is provided, partial, planned or the CSP's job |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Production install, hardening checklist, backup, upgrade |
 | [DEMO.md](DEMO.md) | Demo mode, sample data and a demonstration path |
 | [OPERATIONS.md](OPERATIONS.md) | Running, logging, diagnostic bundle, runbooks |
