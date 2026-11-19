@@ -43,7 +43,7 @@ effect. "Use file value" removes a console value so the file value applies again
 | Security | `security.approval_hours` (1 to 720, default 72) | yes, immediately | Lifetime of an approval request. |
 | Logging | `log.level` | yes, immediately | |
 | Logging | `log.dir`, `log.max_mb`, `log.backups`, `log.json`, `log.syslog` | yes, after a restart | |
-| Outgoing mail | `smtp.host`, `smtp.port`, `smtp.username`, `smtp.from`, `smtp.starttls` | yes, immediately | |
+| Outgoing mail | `smtp.host`, `smtp.port`, `smtp.username`, `smtp.from`, `smtp.starttls` | yes, immediately | Port 465 uses TLS from the first byte; other ports use STARTTLS when `smtp.starttls` is on. Every message carries a Date and a Message-ID. Prove it with **System, Mail outbox, Send a test message**, which shows the relay's answer. Without a host the portal sends nothing and messages wait in the outbox |
 | Outgoing mail | mail password | write-only | Saved encrypted, or from the environment variable named by `smtp.password_env`. |
 | Background jobs | `jobs.usage_sample_minutes`, `jobs.alert_check_minutes` | yes, after a restart | |
 | Background jobs | `jobs.backup_hours` (0 turns it off), `jobs.backup_keep`, `jobs.drift_hours` (0 turns it off), `jobs.audit_checkpoint_minutes` | yes, after a restart | Backup interval and number of copies kept; drift check interval; how often the audit log is signed. |

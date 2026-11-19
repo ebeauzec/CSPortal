@@ -7,6 +7,7 @@ import logging
 import smtplib
 import ssl
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
 
 from . import logs
 from .backends.base import BackendError
@@ -67,9 +68,17 @@ def send_mail(app, to: str, subject: str, body: str, customer_id: str | None = N
         from . import settings
         msg = EmailMessage()
         msg["From"], msg["To"], msg["Subject"] = smtp["from"], to, subject
+        # Many mail systems refuse or junk a message that has no Date or Message-ID, and smtplib does not add them.
+        msg["Date"] = formatdate(localtime=False)
+        msg["Message-ID"] = make_msgid(domain=(smtp["from"].rsplit("@", 1)[-1] or "localhost").strip("<> "))
         msg.set_content(body)
-        with smtplib.SMTP(smtp["host"], int(smtp["port"]), timeout=20) as s:
-            if smtp["starttls"]:
+        port = int(smtp["port"])
+        if port == 465:                                  # implicit TLS: the connection is encrypted from the first byte
+            conn = smtplib.SMTP_SSL(smtp["host"], port, timeout=20, context=ssl.create_default_context())
+        else:
+            conn = smtplib.SMTP(smtp["host"], port, timeout=20)
+        with conn as s:
+            if smtp["starttls"] and port != 465:
                 s.starttls(context=ssl.create_default_context())
             pw = settings.smtp_password(app)
             if smtp["username"] and pw:

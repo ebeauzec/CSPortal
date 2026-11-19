@@ -4,6 +4,16 @@ Neutral release notes. Each entry says what changed and what is **not verified**
 
 ## Unreleased
 
+**Fixed (invitations and outgoing mail)**
+- Messages now carry `Date` and `Message-ID` headers; many mail systems refuse or junk a message without them. Port 465 now
+  uses TLS from the first byte (it hung before).
+- The admin console's Mail outbox has **Send a test message**, which reports the relay's answer, so mail can be proved before
+  invitations rely on it.
+- In demo mode, where no mail is delivered, the invitation result page and the person's Manage page show the link. It is never
+  shown outside demo mode.
+- Tests with a fake mail relay cover a working relay, a broken one, no relay, port 465 and the demo link.
+- Not tested against a real mail provider.
+
 **Fixed (StorageGRID connector, after a check against NetApp's published documentation; see `docs/API_VERIFICATION.md`)**
 - New tenants are created with the `management` capability. Without it the tenant sign-in the portal uses would very
   probably have been refused.

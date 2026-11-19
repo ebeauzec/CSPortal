@@ -184,6 +184,19 @@ def register(app):
                           "If it fails again, tell your service provider."),
     }
 
+    def _demo_link_card(u):
+        """In demo mode no mail is delivered, so the link is shown here for the person trying the demo. Never outside demo mode:
+        a link shown to the person who invites would let them sign in as the invited person."""
+        if not app.cfg.demo or app.auth.invite_state(u["id"])[0] != "open":
+            return ""
+        r = app.db.one("SELECT body FROM outbox WHERE lower(to_addr)=? ORDER BY created_at DESC, rowid DESC LIMIT 1", (u["email"].lower(),))
+        m = re.search(r"https?://\S+/invite/\S+", r["body"]) if r else None
+        if not m:
+            return ""
+        return ui.card("Demonstration only: open the link yourself", Raw(
+            "<p>A demonstration portal delivers no e-mail. In a real portal this link is sent to the person and shown to nobody else. "
+            "Open it to play the part of " + esc(u["name"]) + ".</p><p>" + str(ui.link(m.group(0), "Open the invitation link", "btn")) + "</p>"))
+
     def _invited_page(ctx, u, mail_id):
         row = app.db.one("SELECT state FROM outbox WHERE id=?", (mail_id,)) if mail_id else None
         kind, text = _MAIL_NOTE.get(row["state"] if row else "", ("warn", "The e-mail has been queued."))
@@ -209,7 +222,7 @@ def register(app):
             ["The person cannot sign in later", "A wrong password several times locks the account for a short while", "Open the person with Manage and press Unlock"],
             ["The person lost their phone", "They cannot give the second sign-in code", "Open the person with Manage and press Reset multi-factor authentication"],
         ]))
-        return ui.page(ctx, "Invitation sent", Raw(top + todo + trouble), "/team")
+        return ui.page(ctx, "Invitation sent", Raw(top + _demo_link_card(u) + todo + trouble), "/team")
 
     def _send_invite(ctx, uid):
         u = _person(ctx, uid)
@@ -279,7 +292,7 @@ def register(app):
                 body += ui.card("Invitation", Raw(
                     f"<p>This person has not set a password yet. {esc(state_text)}</p>"
                     "<p>Sending a new invitation e-mails a fresh link and cancels the earlier one.</p><p>"
-                    + str(ui.button("Send new invite", "/team/invite", csrf, {"uid": u["id"]}, "primary")) + " " + cancel + "</p>"))
+                    + str(ui.button("Send new invite", "/team/invite", csrf, {"uid": u["id"]}, "primary")) + " " + cancel + "</p>")) + _demo_link_card(u)
             # 3. sign-in help
             help_ = ""
             if app.auth.is_locked(u):

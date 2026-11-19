@@ -34,6 +34,8 @@ pages list the sample accounts and their shared demo password.
 
 ## Suggested demonstration path
 
+0. **Invitations in the demo.** No mail is delivered. After you invite a person, the result page and the person's Manage page show the
+   link, so you can play the part of the invited person. A real portal never shows the link to the person who invites.
 1. **UC1 Onboarding.** Admin console: Customers, New customer. The invitation appears under System, Mail outbox
    (demo mode captures mail there); open its link to set a password. Show Kestrel's **Retry provisioning**.
 2. **UC3 Buckets.** Sign in as `dana@riverbend.example`. Create a bucket, turn on versioning, add a lifecycle rule, read the

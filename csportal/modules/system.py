@@ -9,9 +9,9 @@ import sys
 import zipfile
 from pathlib import Path
 
-from .. import COPYRIGHT, PRODUCT, __version__, crypto, logs
+from .. import COPYRIGHT, PRODUCT, __version__, crypto, logs, services
 from ..auth import AuthError, CSP_ROLES
-from ..util import human_bytes, iso
+from ..util import human_bytes, iso, valid_email
 from ..web import ui
 from ..web.core import Raw, Response, redirect, text_response
 
@@ -118,7 +118,28 @@ def register(app):
         note = ("Demo mode: mail is captured here and never sent." if app.cfg.demo else
                 "Messages that could not be sent (no mail relay, or a failure) stay here with their set-password link so an administrator can pass it on. "
                 "After delivery the link is removed from the stored copy.")
-        return ui.page(ctx, "Mail outbox", Raw(ui.card("Messages", Raw(f"<p class='muted'>{ui.esc(note)}</p>" + tbl))), "/outbox")
+        test = ""
+        if full:
+            test = ui.card("Send a test message", Raw(
+                "<p>Sends one short message through the mail settings now, and shows what happened. Use it after changing the mail relay, "
+                "before relying on invitations.</p>" + str(ui.form("/outbox/test", [{"name": "to", "label": "Send to", "type": "email"}], ctx.sess.csrf, "Send test message"))))
+        return ui.page(ctx, "Mail outbox", Raw(test + ui.card("Messages", Raw(f"<p class='muted'>{ui.esc(note)}</p>" + tbl))), "/outbox")
+
+    @app.route("admin", "POST", "/outbox/test", perm="system.edit")
+    def outbox_test(ctx):
+        to = ctx.f("to").strip()
+        if not valid_email(to):
+            ctx.flash("Error: Enter a valid e-mail address.")
+            return redirect("/outbox")
+        mid = services.send_mail(app, to, f"Test message from {app.cfg.d['branding']['name']}",
+                                 "This is a test message from the portal. If you can read it, outgoing mail works.\n")
+        row = app.db.one("SELECT state, error FROM outbox WHERE id=?", (mid,))
+        ctx.audit("mail.test", to, row["state"])
+        ctx.flash({"sent": "Test message sent. Check the inbox, and the spam folder.",
+                   "captured": "Demo mode: the message was captured below and not delivered.",
+                   "not-configured": "Error: No mail relay is set. Enter the mail host under Settings, mail."}.get(
+                       row["state"], "Error: The message could not be sent: " + (row["error"] or "unknown reason")))
+        return redirect("/outbox")
 
     @app.route("admin", "POST", "/system/conformance", perm="system.edit")
     def conformance(ctx):

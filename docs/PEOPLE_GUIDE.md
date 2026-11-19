@@ -67,7 +67,7 @@ make sense for them.
 | The person says the e-mail did not arrive | Spam folder, a typo in the address, or the e-mail system is slow | Check spam and the address. Wait a few minutes, then **Send new invite** |
 | *This link is not valid or has expired* | The link works once and for 72 hours, or a newer invitation replaced it | **Send new invite** |
 | The address was typed wrongly | The invitation went to someone else or nowhere | **Cancel the link**, **Remove** the person, invite again with the right address |
-| The page says e-mail is not set up | Your provider has not configured outgoing e-mail yet | Ask your provider. Then press **Send new invite** |
+| The page says e-mail is not set up, or could not be sent | Your provider has not configured outgoing e-mail, or the mail system refused it | Ask your provider (they can send a test message from the admin console, Mail outbox). Then press **Send new invite** |
 | The person cannot sign in | Several wrong passwords lock the account for a short while | **Unlock** |
 | The person lost their phone | They cannot give the second sign-in code | **Reset multi-factor authentication** |
 
