@@ -53,7 +53,7 @@ console shows the result per customer, with the reason when something is missing
 | `operations` (core) | admin | Approvals by a second super administrator, drift check, backups, audit integrity, personal-data export and erasure | all | Built |
 | `catalogue` | admin | Plans, rate cards, feature switches, module switchboard | UC1, UC2 | Built |
 | `tenant-onboarding` | admin | Create, suspend, resume, close customers and their grid tenants | UC1 | Built |
-| `tenant-access` | customer | Portal users, roles, invitations, sessions; storage users and groups scoped to buckets | UC1 | Built (1.1.0) |
+| `tenant-access` | customer | Portal users, roles, invitations, sessions; storage users and groups scoped to buckets | UC1 | Built (1.2.0) |
 | `s3-access` | customer | Guided key creation (name, permissions, buckets, expiry), secret shown once, connection details and test command, replacement and removal | UC1 | Built (2.0.0) |
 | `buckets` | customer | Guided bucket creation (1.2.0), buckets, versioning, lifecycle, access policy, CORS, Object Lock and default retention, protection posture | UC3 | Built (1.1.0) |
 | `usage-billing` | both | Usage trends, monthly statements, adjustments, CSV export | UC2 | Built |

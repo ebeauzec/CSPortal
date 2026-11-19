@@ -4,6 +4,15 @@ Neutral release notes. Each entry says what changed and what is **not verified**
 
 ## Unreleased
 
+**Changed (people and invitations; see `docs/PEOPLE_GUIDE.md`)**
+- **Guided invitation** for customer administrators: three plain questions (who, what role, what happens next), the safe
+  role preselected, problems explained in words with the answers kept. The result page says whether the e-mail was sent,
+  what the person will do, and what to try if the e-mail does not arrive.
+- **Manage a person** page: one page per person with only the actions that apply (change role, send a new invitation, cancel
+  the link, unlock, sign out everywhere, reset MFA, remove), each explained before the button. The People list shows status
+  in words, last sign-in and a five-step summary. Existing actions, guards and password confirmations are unchanged.
+- Customer guide `docs/PEOPLE_GUIDE.md`. Module `tenant-access` 1.2.0. Not verified on a real e-mail system.
+
 **Changed (bucket creation; see `docs/BUCKETS_GUIDE.md`)**
 - **Guided bucket creation**: four plain questions on one page (name and region; protection; clean-up; who can use it).
   Name problems are explained with a suggested fix. Protection choices: keep old versions, latest only, or lock with a

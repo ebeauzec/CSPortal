@@ -465,7 +465,7 @@ class PortalControls(unittest.TestCase):
         self.assertEqual(self.app.db.one("SELECT COUNT(*) n FROM invitations WHERE user_id=? AND used=0", (u["id"],))["n"], 1)
         c.post_form("/team", "/team/invite/revoke", {"uid": u["id"]})
         self.assertEqual(self.app.auth.invite_state(u["id"])[0], "none")
-        self.assertIn("no link", c.get("/team")[1])
+        self.assertIn("No active link", c.get("/team")[1])
         # change the role of an active person; their sessions end
         ro = self.env.client()
         ro.login("lee@riverbend.example")
@@ -500,6 +500,85 @@ class PortalControls(unittest.TestCase):
         ro.login("lee@riverbend.example")
         c.post_form("/team", "/team/signout", {"uid": lee["id"]})
         self.assertIn("Sign in", ro.get("/buckets")[1])
+
+    # ------------------------------------------------------------ guided people and invitations
+    def test_guided_invitation_creates_the_person_and_explains_what_happens_next(self):
+        c = self.login()
+        st, page = c.get("/team/new")
+        self.assertEqual(st, 200)
+        for text in ("Before you start", "Who are you inviting?", "What may they do?", "What happens next", "Send invitation"):
+            self.assertIn(text, page)
+        self.assertRegex(page, r'value="read-only" checked')                                # the safe choice is preselected
+        self.assertIn("as few people as possible", page)
+        st, page = c.post_form("/team/new", "/team/new", {"name": "Alex Morgan", "email": "Alex.Morgan@riverbend.example", "role": "operator"})
+        self.assertEqual(st, 200)
+        for text in ("Invitation prepared for Alex Morgan", "What happens now", "If something does not work", "Send new invite", "/team/person?uid="):
+            self.assertIn(text, page)
+        u = self.person("alex.morgan@riverbend.example")
+        self.assertEqual((u["role"], u["state"], u["customer_id"]), ("operator", "invited", self.person(ADMIN_C)["customer_id"]))
+        self.assertEqual(self.app.auth.invite_state(u["id"])[0], "open")
+        mail = self.app.db.one("SELECT body FROM outbox WHERE to_addr='alex.morgan@riverbend.example'")
+        self.assertIn("/invite/", mail["body"])
+        self.assertTrue(self.app.db.one("SELECT 1 FROM audit WHERE action='user.create' AND target='alex.morgan@riverbend.example'"))
+        self.assertIn("Waiting for them to accept", c.get("/team")[1])
+
+    def test_guided_invitation_asks_again_in_plain_words(self):
+        c = self.login()
+        before = self.app.db.one("SELECT COUNT(*) n FROM users")["n"]
+        st, page = c.post_form("/team/new", "/team/new", {"name": "", "email": "someone@riverbend.example", "role": "read-only"})
+        self.assertEqual(st, 400)
+        self.assertIn("Enter the person", page)
+        st, page = c.post_form("/team/new", "/team/new", {"name": "Sam Lee", "email": "not-an-address", "role": "read-only"})
+        self.assertEqual(st, 400)
+        self.assertIn("does not look right", page)
+        self.assertIn('value="Sam Lee"', page)                                               # what was typed is kept
+        st, page = c.post_form("/team/new", "/team/new", {"name": "Sam Lee", "email": "lee@riverbend.example", "role": "read-only"})
+        self.assertEqual(st, 400)
+        self.assertIn("already has an account", page)
+        st, page = c.post_form("/team/new", "/team/new", {"name": "Sam Lee", "email": "sam.lee@riverbend.example", "role": "superuser"})
+        self.assertEqual(st, 400)
+        self.assertIn("Choose what the person may do", page)
+        self.assertEqual(self.app.db.one("SELECT COUNT(*) n FROM users")["n"], before)
+
+    def test_only_administrators_can_invite_people(self):
+        for email in ("omar@riverbend.example", "lee@riverbend.example"):
+            c = self.login(email)
+            self.assertEqual(c.get("/team/new")[0], 403)
+            c.post_form("/team", "/team/new", {"name": "Nope", "email": "nope@riverbend.example", "role": "read-only"})
+            self.assertIsNone(self.person("nope@riverbend.example"))
+
+    def test_person_page_explains_each_action_and_keeps_the_guards(self):
+        c = self.login()
+        lee, me, mara = self.person("lee@riverbend.example"), self.person(ADMIN_C), self.person(OTHER_C)
+        st, page = c.get("/team/person?uid=" + lee["id"])
+        self.assertEqual(st, 200)
+        for text in ("Change what they can do", "Change role", "Sign out everywhere", "Remove this person", "asks for your password"):
+            self.assertIn(text, page)
+        st, page = c.get("/team/person?uid=" + me["id"])                                       # yourself: nothing to press
+        self.assertIn("This is you", page)
+        self.assertNotIn("Change role", page)
+        self.assertEqual(c.get("/team/person?uid=" + mara["id"])[0], 404)                      # another customer's person
+        other = self.env.client()                                                              # an operator may look but not change
+        other.login("omar@riverbend.example")
+        st, page = other.get("/team/person?uid=" + lee["id"])
+        self.assertEqual(st, 200)
+        self.assertIn("View only", page)
+        self.assertNotIn("Change role", page)
+
+    def test_invited_person_page_offers_new_link_and_cancel(self):
+        c = self.login()
+        c.post_form("/team/new", "/team/new", {"name": "Pat Quinn", "email": "pat.quinn@riverbend.example", "role": "billing"})
+        u = self.person("pat.quinn@riverbend.example")
+        st, page = c.get("/team/person?uid=" + u["id"])
+        for text in ("Invitation", "Send new invite", "Cancel the link", "has not set a password yet"):
+            self.assertIn(text, page)
+        c.post_form("/team/person?uid=" + u["id"], "/team/invite/revoke", {"uid": u["id"]})
+        st, page = c.get("/team/person?uid=" + u["id"])
+        self.assertIn("There is no active link", page)
+        self.assertNotIn("Cancel the link", page)
+        c.post_form("/team/person?uid=" + u["id"], "/team/remove", {"uid": u["id"]})
+        self.assertIsNone(self.person("pat.quinn@riverbend.example"))
+        self.assertEqual(c.get("/team/person?uid=" + u["id"])[0], 404)
 
     # ------------------------------------------------------------ groups, users, keys
     def test_scoped_group_and_membership(self):

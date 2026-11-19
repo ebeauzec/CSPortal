@@ -31,17 +31,16 @@ as `user.reauth`.
 
 Page: **People (portal)**. Permission to change: `access.edit` (administrator).
 
-| Control | Behaviour |
-|---|---|
-| Invite a person | Name, e-mail, role. The person receives a link to set a password. The link works **once** and for **72 hours** |
+| Invite a person (guided) | One page, three questions: who (name, e-mail), what they may do (one role, *Read only* preselected, each with a plain description), and what happens next. Problems are explained in plain words and the typed answers are kept. The result page shows the role and link expiry, whether the e-mail was sent, what the person will do, and a troubleshooting table. The link works **once** and for **72 hours**. Steps for customers: [PEOPLE_GUIDE.md](PEOPLE_GUIDE.md) |
+| People list | Status in words (*Active*, *Waiting for them to accept (link valid until ...)*, *Link expired*, *No active link*, *locked*), last sign-in, MFA, a five-step summary and a **Manage** link per person |
+| Manage a person | One page per person (`/team/person`) that shows only the actions that apply: change role (radio list with consequences), send a new invitation, cancel the link, unlock, sign out everywhere, reset MFA, remove. Nothing on it for yourself, or for a viewer without `access.edit` |
 | Send a new invitation | Cancels every earlier unused link for that person, then sends a new one |
-| Revoke an invitation | Cancels the link. The person stays on the list, marked "no link", and cannot sign in until invited again |
-| Invitation status | Each invited person shows *open until*, *expired* or *no link* |
-| Change a role | Per person. The person is **signed out** and the new role applies at the next sign-in |
+| Revoke an invitation | Cancels the link. The person stays on the list, marked *No active link*, and cannot sign in until invited again |
+| Change a role | Per person. The person is **signed out** and the new role applies at the next sign-in. Asks for the password again |
 | Sign out everywhere | Ends every session of that person |
 | Unlock | Clears the lock-out after too many wrong passwords |
-| Reset MFA | The person sets up multi-factor authentication again at the next sign-in |
-| Remove | Deletes the person and their sessions and invitations |
+| Reset MFA | The person sets up multi-factor authentication again at the next sign-in. Asks for the password again |
+| Remove | Deletes the person and their sessions and invitations. Asks for the password again |
 
 Guards: nobody can change or remove their own entry; the last active administrator cannot be demoted or removed;
 a person is looked up by customer, so an administrator can never act on another customer's people.
