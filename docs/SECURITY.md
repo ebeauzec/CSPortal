@@ -79,7 +79,8 @@ reasoning behind it. Both are updated whenever the design changes.
 - CI job `dependency-scan` runs `pip-audit` on `requirements.txt` (and everything it pulls in) on every push,
   pull request and weekly; a known vulnerability fails the build. The same job publishes a CycloneDX software
   bill of materials as a build artifact. Dependabot proposes updates to Python packages, the base image and the
-  workflow actions. The scan covers Python packages only: it does not scan the base image's operating-system
+  workflow actions. It does not propose a new Python minor or major version: that is a deliberate decision,
+  made with tests on the new version, and it changes the Dockerfile, CI and docs together. The scan covers Python packages only: it does not scan the base image's operating-system
   packages or the host (the CSP does, see [DEPLOYMENT.md](DEPLOYMENT.md)).
 
 ## Implementation status (version 0.1.0)

@@ -17,7 +17,12 @@ Neutral release notes. Each entry says what changed and what is **not verified**
 - `requirements.txt` now pins the two packages `cryptography` needs (`cffi` 2.1.1, `pycparser` 3.12), and
   THIRD_PARTY_NOTICES.md lists them. Earlier text saying "one third-party package" was incomplete.
 
+- Dependency updates reviewed from Dependabot: `cryptography` 50.0.2, `actions/checkout` 7,
+  `actions/setup-python` 7, `actions/upload-artifact` 7. Dependabot no longer proposes new Python minor or
+  major versions for the base image (a Python 3.15 proposal was declined: not tested on 3.15).
+
 **Not verified**
+- The product has not been run on Python 3.15. The supported version stays 3.12.
 - The dependency scan found no known vulnerabilities, locally and in its first GitHub Actions run (2026-11-19).
   It covers Python packages only, not the base image or host.
 - The control map is a mapping of the product's own design to the controls. No audit, certificate or independent

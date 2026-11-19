@@ -11,8 +11,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
@@ -26,8 +26,8 @@ jobs:
     # Fails the build when a pinned dependency has a known vulnerability, and publishes the bill of materials.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install scan tools (pinned; they are not part of the product)
@@ -39,7 +39,7 @@ jobs:
           python -m venv /tmp/product-env
           /tmp/product-env/bin/pip install -r requirements.txt
           cyclonedx-py environment /tmp/product-env --of JSON -o sbom.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: sbom.cdx.json
