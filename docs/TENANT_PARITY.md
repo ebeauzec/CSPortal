@@ -28,19 +28,21 @@ changes it in the Grid Manager.
 Status: **R1** = Release 1, **R2** = Release 2, **R3** = Release 3, **CSP** = CSP only, never
 exposed to customers. Module names are in [MODULES.md](MODULES.md).
 
-**Build state (0.1.0).** All **R1** rows below are built and tested against the simulator, except where a row
-says otherwise. None is verified on a real grid yet. The "bucket details: consistency level" row is shown
-read-only; changing it is not built. Object Lock is chosen at bucket creation; retention rules are set by the
-customer's applications through the S3 API. **R2** and **R3** rows are not built.
+**Build state (unreleased, after 0.1.0).** All **R1** rows below are built and tested against the simulator,
+and the bucket settings against a fake TLS grid that checks S3 signatures. None is verified on a real grid yet.
+The "bucket details: consistency level" row is shown read-only; changing it is not built. Object Lock is chosen at
+bucket creation; the portal then sets the bucket's default retention, and applications set longer periods on single
+objects through the S3 API. CORS, which was planned for R2, is built. **R2** and **R3** rows not named here are not
+built. The full list of what a customer administrator can do is in [CUSTOMER_CONTROLS.md](CUSTOMER_CONTROLS.md).
 
 ### Account and access
 
 | Capability | Module | Status | Note |
 |---|---|---|---|
 | Dashboard: usage, quota, buckets, objects | `tenant-dashboard` | R1 | Portal-styled equivalent of the tenant dashboard. |
-| Local users: create, edit, disable, delete, reset password | `tenant-access` | R1 | Tenant users on the grid; also portal users (see below). |
-| Groups and permissions | `tenant-access` | R1 | Group permissions and the S3 group policy. |
-| S3 access keys: create, view once, rotate, delete (own and for other users) | `s3-access` | R1 | Secret shown once; portal never stores it. |
+| Local users: create, edit, disable, delete, change groups | `tenant-access` | R1 | Tenant users on the grid; also portal users (see below). Password reset is not applicable: storage users sign in with access keys only. |
+| Groups and permissions | `tenant-access` | R1 | Read-only or read-write, for every bucket or for named buckets; change later. |
+| S3 access keys: create (with optional expiry), view once, rotate, delete (own and for other users) | `s3-access` | R1 | Secret shown once; portal never stores it. |
 | Temporary S3 credentials | `s3-access` | R3 | **verify** availability. |
 | Own identity source (SAML, OIDC, Active Directory, OpenLDAP, Azure AD) | `federation` | R2 | Needs the tenant permission "use own identity source". **verify** list per release. |
 | Tenant root user and its password | `tenant-onboarding` | R1 | Set at creation; portal then manages access by group. Root access is not used for daily work. |
@@ -54,9 +56,9 @@ customer's applications through the S3 API. **R2** and **R3** rows are not built
 | Bucket details: size, objects, consistency level | `buckets` | R1 | Consistency level choices are limited by CSP plan. |
 | Versioning | `buckets` | R1 | |
 | Lifecycle rules | `buckets` | R1 | Delivered through the S3 API on the tenant's behalf. |
-| S3 Object Lock (default retention, legal hold) | `buckets` | R1 | Needs grid-wide enablement by the CSP. |
-| Bucket policy and ACL, public-access guard | `buckets` | R1 | |
-| CORS | `buckets` | R2 | |
+| S3 Object Lock: default retention (governance or compliance) | `buckets` | R1 | Needs grid-wide enablement by the CSP. Legal hold is set per object by applications; not built in the portal. |
+| Bucket policy: guided grants to users and groups (whole bucket or one folder), encrypted-connections-only, free editor with checks, public-access guard | `buckets` | R1 | Policy rules in [CUSTOMER_CONTROLS.md](CUSTOMER_CONTROLS.md). Object ACLs are not offered. |
+| CORS | `buckets` | R1 | Rules with origins, methods, headers, cache age. |
 | Default encryption | `buckets` | R2 | **verify** |
 | Last-access-time updates | `buckets` | R2 | **verify** |
 | Cross-origin and website hosting settings | `buckets` | R3 | **verify** |

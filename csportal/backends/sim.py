@@ -12,7 +12,9 @@ import secrets
 import threading
 from pathlib import Path
 
+from .. import policy as bpolicy
 from ..util import GB, TB, iso
+from . import s3xml
 from .base import BackendError, StorageBackend
 
 
@@ -133,9 +135,13 @@ class Simulator(StorageBackend):
     # ------------------------------------------------------------ buckets
     @staticmethod
     def _bview(name, b) -> dict:
+        pol = b.get("policy")
+        if pol is None and b["public"]:
+            pol = bpolicy.set_public(None, name, True)          # seeded demo buckets carry a flag only
         return {"name": name, "region": b["region"], "created": b["created"], "bytes": b["bytes"], "objects": b["objects"],
                 "versioning": b["versioning"], "object_lock": b["object_lock"], "public": b["public"],
-                "lifecycle": b["lifecycle"], "consistency": b["consistency"]}
+                "lifecycle": b["lifecycle"], "consistency": b["consistency"], "policy": pol,
+                "cors": b.get("cors", []), "lock_default": b.get("lock_default"), "notes": []}
 
     def list_buckets(self, ref):
         with self._lock:
@@ -194,7 +200,27 @@ class Simulator(StorageBackend):
                     raise BackendError("needs_versioning", "Rules for old versions need versioning on.", 409)
                 b["lifecycle"] = ch["lifecycle"]
             if "public" in ch:
-                b["public"] = bool(ch["public"])
+                b["policy"] = bpolicy.set_public(b.get("policy"), name, bool(ch["public"]))
+                b["public"] = bpolicy.is_public(b["policy"])
+            if "policy" in ch:
+                doc = ch["policy"]
+                if doc is not None and len(json.dumps(doc).encode()) > bpolicy.MAX_BYTES:
+                    raise BackendError("invalid", "The policy is larger than the storage service allows.", 400)
+                b["policy"] = doc
+                b["public"] = bpolicy.is_public(doc)
+            if "cors" in ch:
+                for r in ch["cors"]:
+                    bad = s3xml.cors_problems(r)
+                    if bad:
+                        raise BackendError("invalid", bad[0], 400)
+                b["cors"] = ch["cors"]
+            if "lock_default" in ch:
+                if not b["object_lock"]:
+                    raise BackendError("not_locked", "Object Lock was not enabled when this bucket was created.", 409)
+                bad = s3xml.lock_problems(ch["lock_default"])
+                if bad:
+                    raise BackendError("invalid", bad[0], 400)
+                b["lock_default"] = ch["lock_default"]
             if "consistency" in ch:
                 b["consistency"] = ch["consistency"]
             self._save()
@@ -202,14 +228,36 @@ class Simulator(StorageBackend):
     # ------------------------------------------------------------ users, groups, keys
     def list_groups(self, ref):
         with self._lock:
-            return [{"name": n, **g} for n, g in sorted(self._t(ref)["groups"].items())]
+            return [{"name": n, "buckets": [], **g} for n, g in sorted(self._t(ref)["groups"].items())]
 
-    def create_group(self, ref, name, access):
+    def _scope(self, t, buckets):
+        """None or an empty list means every bucket; a list names the buckets the group may use."""
+        buckets = list(dict.fromkeys(buckets or []))
+        for b in buckets:
+            if b not in t["buckets"]:
+                raise BackendError("bucket_not_found", f"Bucket {b} does not exist.", 404)
+        return buckets
+
+    def create_group(self, ref, name, access, buckets=None):
         with self._lock:
-            g = self._t(ref)["groups"]
+            t = self._t(ref)
+            g = t["groups"]
             if name in g:
                 raise BackendError("group_exists", "A group with this name already exists.", 409)
-            g[name] = {"access": access, "created": iso()}
+            g[name] = {"access": access, "created": iso(), "buckets": self._scope(t, buckets)}
+            self._save()
+
+    def update_group(self, ref, name, access=None, buckets=None):
+        """`buckets` of None leaves the scope as it is; a list (empty = every bucket) replaces it."""
+        with self._lock:
+            t = self._t(ref)
+            g = t["groups"].get(name)
+            if not g:
+                raise BackendError("not_found", "The group was not found.", 404)
+            if access is not None:
+                g["access"] = access
+            if buckets is not None:
+                g["buckets"] = self._scope(t, buckets)
             self._save()
 
     def delete_group(self, ref, name):
@@ -261,9 +309,10 @@ class Simulator(StorageBackend):
             u = self._t(ref)["users"].get(username)
             if not u:
                 raise BackendError("user_not_found", "The user was not found.", 404)
-            return [{"id": k, "created": v["created"], "last_used": v.get("last_used")} for k, v in sorted(u["keys"].items())]
+            return [{"id": k, "created": v["created"], "last_used": v.get("last_used"), "expires": v.get("expires")}
+                    for k, v in sorted(u["keys"].items())]
 
-    def create_key(self, ref, username):
+    def create_key(self, ref, username, expires=None):
         with self._lock:
             u = self._t(ref)["users"].get(username)
             if not u:
@@ -274,7 +323,7 @@ class Simulator(StorageBackend):
                 raise BackendError("too_many_keys", "A user can hold at most 5 access keys. Delete one first.", 409)
             kid = "AK" + secrets.token_hex(9).upper()
             secret = secrets.token_urlsafe(30)
-            u["keys"][kid] = {"created": iso(), "last_used": None}
+            u["keys"][kid] = {"created": iso(), "last_used": None, "expires": expires}
             self._save()
             return {"id": kid, "secret": secret}      # the secret is returned once and not kept
 

@@ -30,6 +30,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from .. import logs
+from .. import policy as bpolicy
+from . import s3sign, s3xml
 from .base import BackendError, StorageBackend
 
 log = logging.getLogger("csportal.backend")
@@ -43,7 +45,7 @@ CALLS = [
     ("GET", "/grid/accounts/{id}/usage"),
     ("GET", "/grid/health"), ("GET", "/grid/alerts"),
     ("GET", "/org/containers"), ("POST", "/org/containers"), ("DELETE", "/org/containers/{bucketName}"),
-    ("GET", "/org/groups"), ("POST", "/org/groups"), ("DELETE", "/org/groups/{id}"),
+    ("GET", "/org/groups"), ("POST", "/org/groups"), ("PUT", "/org/groups/{id}"), ("DELETE", "/org/groups/{id}"),
     ("GET", "/org/users"), ("POST", "/org/users"), ("PATCH", "/org/users/{id}"), ("DELETE", "/org/users/{id}"),
     ("GET", "/org/users/{id}/s3-access-keys"), ("POST", "/org/users/{id}/s3-access-keys"),
     ("DELETE", "/org/users/{id}/s3-access-keys/{accessKey}"),
@@ -184,29 +186,36 @@ class StorageGridBackend(StorageBackend):
 
     # ------------------------------------------------------------------ S3 (bucket configuration)
     def _s3(self, ref: str, method: str, bucket: str, query: str = "", body: bytes = b"") -> tuple[int, bytes]:
+        """One signed S3 request on the first gateway endpoint (path-style). Settings calls carry Content-MD5."""
         c = self.get_creds(ref) if self.get_creds else None
         if not c or not c.get("s3_key"):
             raise BackendError("no_credentials", "No S3 service key is stored for this storage account.", 500)
+        if not self.s3_endpoint:
+            raise BackendError("not_configured", "No S3 gateway endpoint is set up yet. An administrator must enter one under Storage grid.", 503)
         host = urllib.parse.urlparse(self.s3_endpoint).netloc
-        now = datetime.now(timezone.utc)
-        amz, day = now.strftime("%Y%m%dT%H%M%SZ"), now.strftime("%Y%m%d")
         path = "/" + urllib.parse.quote(bucket)
-        phash = hashlib.sha256(body).hexdigest()
-        canon_q = "&".join(sorted(query.split("&"))) if query else ""
-        hdrs = {"host": host, "x-amz-date": amz, "x-amz-content-sha256": phash}
-        signed = ";".join(sorted(hdrs))
-        creq = "\n".join([method, path, canon_q, "".join(f"{k}:{hdrs[k]}\n" for k in sorted(hdrs)), signed, phash])
-        scope = f"{day}/{self.s3_region}/s3/aws4_request"
-        sts = "\n".join(["AWS4-HMAC-SHA256", amz, scope, hashlib.sha256(creq.encode()).hexdigest()])
-        k = ("AWS4" + c["s3_secret"]).encode()
-        for part in (day, self.s3_region, "s3", "aws4_request"):
-            k = hmac.new(k, part.encode(), hashlib.sha256).digest()
-        sig = hmac.new(k, sts.encode(), hashlib.sha256).hexdigest()
-        out = {"x-amz-date": amz, "x-amz-content-sha256": phash,
-               "Authorization": f"AWS4-HMAC-SHA256 Credential={c['s3_key']}/{scope}, SignedHeaders={signed}, Signature={sig}"}
-        if body:
-            out["Content-Type"] = "application/xml"
-        return self._http(method, f"{self.s3_endpoint}{path}" + (f"?{query}" if query else ""), out, body or None)
+        hdrs = s3sign.sign(method, host, path, query, body, c["s3_key"], c["s3_secret"], self.s3_region, md5=method == "PUT")
+        return self._http(method, f"{self.s3_endpoint}{path}" + (f"?{query}" if query else ""), hdrs, body or None, self.timeout)
+
+    def _s3_read(self, ref: str, name: str, sub: str, notes: list) -> bytes | None:
+        """Read one bucket setting. Returns b"" when it is not set, None when it could not be read (noted)."""
+        try:
+            st, raw = self._s3(ref, "GET", name, sub)
+        except BackendError as e:
+            notes.append(f"{sub}: {e.message}")
+            return None
+        if st == 200:
+            return raw
+        if st == 404:
+            return b""
+        notes.append(f"{sub}: the storage service answered {st}")
+        return None
+
+    def _s3_write(self, ref: str, name: str, sub: str, method: str, body: bytes, what: str):
+        st, raw = self._s3(ref, method, name, sub, body)
+        if st >= 300 and not (method == "DELETE" and st == 404):
+            logs.event(log, logging.WARNING, "bucket setting rejected", setting=sub, status=st)
+            raise BackendError("backend_error", f"The {what} change was rejected by the storage service ({st}).", st)
 
     # ------------------------------------------------------------------ service
     def health(self) -> dict:
@@ -291,27 +300,40 @@ class StorageGridBackend(StorageBackend):
                 "quota_bytes": acct.get("policy", {}).get("quotaObjectBytes", 0), "buckets": bs}
 
     def list_buckets(self, ref):
+        """Cheap listing: settings that need one S3 call each (versioning, access) are read on the bucket page."""
         use = {b["name"]: b for b in self.usage(ref)["buckets"]}
         out = []
         for b in self._api(ref, "GET", "/org/containers") or []:
             n = b["name"]
             out.append({"name": n, "region": b.get("region", "us-east-1"), "created": b.get("creationTime", ""),
                         "bytes": use.get(n, {}).get("bytes", 0), "objects": use.get(n, {}).get("objects", 0),
-                        "versioning": "unknown", "object_lock": bool(b.get("objectLock")), "public": False,
-                        "lifecycle": [], "consistency": b.get("consistency", "")})
+                        "versioning": "unknown", "object_lock": bool(b.get("objectLock") or b.get("s3ObjectLock")), "public": None,
+                        "lifecycle": [], "consistency": b.get("consistency", ""), "policy": None, "cors": [],
+                        "lock_default": None, "notes": []})
         return out
 
     def get_bucket(self, ref, name):
         for b in self.list_buckets(ref):
-            if b["name"] == name:
-                st, raw = self._s3(ref, "GET", name, "versioning")
-                if st == 200 and b"<Status>Enabled</Status>" in raw:
-                    b["versioning"] = "enabled"
-                elif st == 200 and b"<Status>Suspended</Status>" in raw:
-                    b["versioning"] = "suspended"
-                elif st == 200:
-                    b["versioning"] = "off"
-                return b
+            if b["name"] != name:
+                continue
+            notes = b["notes"]
+            raw = self._s3_read(ref, name, "versioning", notes)
+            b["versioning"] = s3xml.versioning_from(raw) if raw else ("off" if raw == b"" else "unknown")
+            raw = self._s3_read(ref, name, "lifecycle", notes)
+            b["lifecycle"] = s3xml.lifecycle_from(raw) if raw else []
+            raw = self._s3_read(ref, name, "policy", notes)
+            if raw:
+                try:
+                    b["policy"] = json.loads(raw.decode())
+                except ValueError:
+                    notes.append("policy: the storage service returned a policy that could not be read")
+            b["public"] = bpolicy.is_public(b["policy"]) if raw is not None else None
+            raw = self._s3_read(ref, name, "cors", notes)
+            b["cors"] = s3xml.cors_from(raw) if raw else []
+            if b["object_lock"]:
+                raw = self._s3_read(ref, name, "object-lock", notes)
+                b["lock_default"] = s3xml.objectlock_from(raw) if raw else None
+            return b
         raise BackendError("bucket_not_found", "The bucket was not found.", 404)
 
     def create_bucket(self, ref, name, region, versioning, object_lock):
@@ -327,46 +349,56 @@ class StorageGridBackend(StorageBackend):
 
     def update_bucket(self, ref, name, **ch):
         if "versioning" in ch:
-            st = "Enabled" if ch["versioning"] == "enabled" else "Suspended"
-            body = (f'<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>{st}</Status>'
-                    f'</VersioningConfiguration>').encode()
-            code, raw = self._s3(ref, "PUT", name, "versioning", body)
-            if code >= 300:
-                raise BackendError("backend_error", "The versioning change was rejected by the storage service.", code)
+            self._s3_write(ref, name, "versioning", "PUT", s3xml.versioning_xml(ch["versioning"]), "versioning")
         if "lifecycle" in ch:
-            rules = []
-            for r in ch["lifecycle"]:
-                x = f"<Rule><ID>{_x(r['id'])}</ID><Filter><Prefix>{_x(r.get('prefix', ''))}</Prefix></Filter><Status>Enabled</Status>"
-                if r.get("expire_days"):
-                    x += f"<Expiration><Days>{int(r['expire_days'])}</Days></Expiration>"
-                if r.get("noncurrent_days"):
-                    x += f"<NoncurrentVersionExpiration><NoncurrentDays>{int(r['noncurrent_days'])}</NoncurrentDays></NoncurrentVersionExpiration>"
-                if r.get("abort_multipart_days"):
-                    x += f"<AbortIncompleteMultipartUpload><DaysAfterInitiation>{int(r['abort_multipart_days'])}</DaysAfterInitiation></AbortIncompleteMultipartUpload>"
-                rules.append(x + "</Rule>")
-            body = ('<LifecycleConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">' + "".join(rules) +
-                    "</LifecycleConfiguration>").encode()
-            code, raw = (self._s3(ref, "PUT", name, "lifecycle", body) if rules else self._s3(ref, "DELETE", name, "lifecycle"))
-            if code >= 300:
-                raise BackendError("backend_error", "The lifecycle change was rejected by the storage service.", code)
-        if "public" in ch and not ch["public"]:
-            self._s3(ref, "DELETE", name, "policy")
-        elif "public" in ch:
-            pol = json.dumps({"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": "*",
-                              "Action": "s3:GetObject", "Resource": f"arn:aws:s3:::{name}/*"}]}).encode()
-            code, _ = self._s3(ref, "PUT", name, "policy", pol)
-            if code >= 300:
-                raise BackendError("backend_error", "The access change was rejected by the storage service.", code)
+            if ch["lifecycle"]:
+                self._s3_write(ref, name, "lifecycle", "PUT", s3xml.lifecycle_xml(ch["lifecycle"]), "lifecycle")
+            else:
+                self._s3_write(ref, name, "lifecycle", "DELETE", b"", "lifecycle")
+        if "public" in ch:
+            notes: list = []
+            raw = self._s3_read(ref, name, "policy", notes)
+            cur = None
+            if raw is None:
+                raise BackendError("backend_error", "The current access policy could not be read, so it was not changed.", 502)
+            if raw:
+                try:
+                    cur = json.loads(raw.decode())
+                except ValueError:
+                    raise BackendError("backend_error", "The current access policy could not be read, so it was not changed.", 502)
+            ch["policy"] = bpolicy.set_public(cur, name, bool(ch["public"]))
+        if "policy" in ch:
+            if ch["policy"]:
+                self._s3_write(ref, name, "policy", "PUT", json.dumps(ch["policy"]).encode(), "access policy")
+            else:
+                self._s3_write(ref, name, "policy", "DELETE", b"", "access policy")
+        if "cors" in ch:
+            if ch["cors"]:
+                self._s3_write(ref, name, "cors", "PUT", s3xml.cors_xml(ch["cors"]), "CORS")
+            else:
+                self._s3_write(ref, name, "cors", "DELETE", b"", "CORS")
+        if "lock_default" in ch:
+            self._s3_write(ref, name, "object-lock", "PUT", s3xml.objectlock_xml(ch["lock_default"]), "Object Lock")
 
     # ------------------------------------------------------------------ users, groups, keys
     def list_groups(self, ref):
-        return [{"name": g.get("displayName", g.get("uniqueName")), "access": _access(g), "id": g["id"],
+        return [{"name": g.get("displayName", g.get("uniqueName")), "access": _access(g), "buckets": _scope(g), "id": g["id"],
                  "created": ""} for g in self._api(ref, "GET", "/org/groups") or []
                 if g.get("uniqueName") != "group/csportal-service"]
 
-    def create_group(self, ref, name, access):
+    def create_group(self, ref, name, access, buckets=None):
         self._api(ref, "POST", "/org/groups", {"displayName": name, "uniqueName": f"group/{name}",
-                                              "policies": {"s3": {"Statement": [_s3_policy(access)]}}})
+                                              "policies": {"s3": {"Statement": _s3_policy(access, buckets)}}})
+
+    def update_group(self, ref, name, access=None, buckets=None):
+        for g in self._api(ref, "GET", "/org/groups") or []:
+            if g.get("displayName") == name:
+                acc = access if access is not None else _access(g)
+                scope = buckets if buckets is not None else _scope(g)
+                g.setdefault("policies", {})["s3"] = {"Statement": _s3_policy(acc, scope)}
+                self._api(ref, "PUT", f"/org/groups/{g['id']}", g)
+                return
+        raise BackendError("not_found", "The group was not found.", 404)
 
     def delete_group(self, ref, name):
         for g in self._api(ref, "GET", "/org/groups") or []:
@@ -407,11 +439,12 @@ class StorageGridBackend(StorageBackend):
 
     def list_keys(self, ref, username):
         u = self._user(ref, username)
-        return [{"id": k.get("accessKey", k.get("id")), "created": k.get("creationTime", ""), "last_used": None}
+        return [{"id": k.get("accessKey", k.get("id")), "created": k.get("creationTime", ""), "last_used": None,
+                 "expires": k.get("expires")}
                 for k in self._api(ref, "GET", f"/org/users/{u['id']}/s3-access-keys") or []]
 
-    def create_key(self, ref, username):
-        k = self._api(ref, "POST", f"/org/users/{self._user(ref, username)['id']}/s3-access-keys", {})
+    def create_key(self, ref, username, expires=None):
+        k = self._api(ref, "POST", f"/org/users/{self._user(ref, username)['id']}/s3-access-keys", {"expires": expires} if expires else {})
         return {"id": k["accessKey"], "secret": k["secretAccessKey"]}
 
     def delete_key(self, ref, username, key_id):
@@ -445,12 +478,36 @@ def _x(s: str) -> str:
     return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
-def _s3_policy(access: str) -> dict:
-    act = {"read-write": ["s3:*"], "read-only": ["s3:GetObject", "s3:ListBucket", "s3:ListAllMyBuckets"]}.get(access, [])
-    return {"Effect": "Allow", "Action": act or ["s3:ListAllMyBuckets"], "Resource": "arn:aws:s3:::*"}
+def _s3_policy(access: str, buckets: list[str] | None = None) -> list[dict]:
+    """Group policy statements. With buckets named, the group can use only those buckets and can not list the others."""
+    act = {"read-write": ["s3:*"], "read-only": ["s3:GetObject", "s3:GetObjectVersion", "s3:ListBucket", "s3:GetBucketLocation"]}.get(access, [])
+    if not act:
+        return [{"Effect": "Allow", "Action": ["s3:ListAllMyBuckets"], "Resource": "arn:aws:s3:::*"}]
+    if not buckets:
+        if access == "read-only":
+            act = act + ["s3:ListAllMyBuckets"]
+        return [{"Effect": "Allow", "Action": act, "Resource": "arn:aws:s3:::*"}]
+    res = [r for b in buckets for r in (f"arn:aws:s3:::{b}", f"arn:aws:s3:::{b}/*")]
+    return [{"Effect": "Allow", "Action": act, "Resource": res}]
 
 
 def _access(g: dict) -> str:
     st = (g.get("policies", {}).get("s3", {}) or {}).get("Statement", [])
     acts = [a for s in st for a in (s.get("Action") if isinstance(s.get("Action"), list) else [s.get("Action")])]
     return "read-write" if "s3:*" in acts else ("read-only" if acts else "none")
+
+
+def _scope(g: dict) -> list[str]:
+    """The buckets a group is limited to; an empty list means every bucket."""
+    names: list[str] = []
+    for st in (g.get("policies", {}).get("s3", {}) or {}).get("Statement", []):
+        for r in (st.get("Resource") if isinstance(st.get("Resource"), list) else [st.get("Resource")]):
+            if not isinstance(r, str):
+                continue
+            if r in ("arn:aws:s3:::*", "*"):
+                return []
+            if r.startswith("arn:aws:s3:::"):
+                n = r[len("arn:aws:s3:::"):].split("/", 1)[0]
+                if n and n not in names:
+                    names.append(n)
+    return names

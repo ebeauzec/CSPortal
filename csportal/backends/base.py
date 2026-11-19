@@ -39,15 +39,23 @@ class StorageBackend:
     def get_bucket(self, ref: str, name: str) -> dict: raise NotImplementedError
     def create_bucket(self, ref: str, name: str, region: str, versioning: bool, object_lock: bool) -> None: raise NotImplementedError
     def delete_bucket(self, ref: str, name: str) -> None: raise NotImplementedError
-    def update_bucket(self, ref: str, name: str, **changes: Any) -> None: raise NotImplementedError
+    def update_bucket(self, ref: str, name: str, **changes: Any) -> None:
+        """Changes: versioning ("enabled"/"suspended"), lifecycle (rules), public (bool), policy (document or None),
+        cors (rules), lock_default ({mode, amount, unit} or None)."""
+        raise NotImplementedError
 
     def list_groups(self, ref: str) -> list[dict]: raise NotImplementedError
-    def create_group(self, ref: str, name: str, access: str) -> None: raise NotImplementedError
+    def create_group(self, ref: str, name: str, access: str, buckets: list[str] | None = None) -> None:
+        """`buckets` limits the group to the named buckets; None or an empty list means every bucket."""
+        raise NotImplementedError
+    def update_group(self, ref: str, name: str, access: str | None = None, buckets: list[str] | None = None) -> None:
+        """Change access and/or scope. `buckets` None keeps the scope; a list (empty = every bucket) replaces it."""
+        raise NotImplementedError
     def delete_group(self, ref: str, name: str) -> None: raise NotImplementedError
     def list_users(self, ref: str) -> list[dict]: raise NotImplementedError
     def create_user(self, ref: str, username: str, full_name: str, groups: list[str]) -> None: raise NotImplementedError
     def update_user(self, ref: str, username: str, groups: list[str] | None = None, disabled: bool | None = None) -> None: raise NotImplementedError
     def delete_user(self, ref: str, username: str) -> None: raise NotImplementedError
     def list_keys(self, ref: str, username: str) -> list[dict]: raise NotImplementedError
-    def create_key(self, ref: str, username: str) -> dict: raise NotImplementedError    # {id, secret}
+    def create_key(self, ref: str, username: str, expires: str | None = None) -> dict: raise NotImplementedError    # {id, secret}
     def delete_key(self, ref: str, username: str, key_id: str) -> None: raise NotImplementedError

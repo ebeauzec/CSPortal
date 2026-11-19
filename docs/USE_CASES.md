@@ -31,8 +31,11 @@ user), customer users.
 - Accept the invitation, set up sign-in (local account with multi-factor authentication, or the
   customer's own identity provider where the CSP allows it).
 - See the service they bought: storage class, quota, region or site, S3 endpoint URL.
-- Invite and remove portal users; assign a role (administrator, operator, billing, read-only).
-- Create, view-once, rotate and revoke S3 access keys for themselves and for service accounts.
+- Invite and remove portal users; assign and change a role (administrator, operator, billing, read-only); cancel or
+  resend an invitation; sign a person out everywhere; unlock an account.
+- Create storage groups (read only or read and write, for all buckets or named buckets) and storage users in them.
+- Create, view-once, rotate and revoke S3 access keys for themselves and for service accounts, with an optional expiry.
+- All of these controls, with roles and audit actions, are in [CUSTOMER_CONTROLS.md](CUSTOMER_CONTROLS.md).
 
 **Admin console.**
 - Define the service catalogue: plans, quota, enabled modules, allowed regions, default policies.
@@ -90,9 +93,10 @@ list is in [TENANT_PARITY.md](TENANT_PARITY.md).
 **Customer portal.**
 - Create, list and delete buckets; see size and object count per bucket.
 - Turn on versioning; set lifecycle rules (expire objects, expire old versions, abort incomplete
-  uploads); set S3 Object Lock retention where the CSP and the grid allow it.
-- Bucket policy and public-access guard: a plain-language editor and a check that warns before a
-  bucket is made public.
+  uploads); set the default Object Lock retention (governance or compliance) where the CSP and the grid allow it.
+- Bucket access: grant a group or storage user read, read-write or upload-only access to the whole bucket or one
+  folder; require encrypted connections; a checked policy editor; a public-access guard that follows the plan.
+- Cross-origin (CORS) rules for browser applications.
 - Cross-grid or cross-region replication and event notifications, where the CSP offers them
   (StorageGRID platform services).
 - A protection posture panel per bucket: versioning on or off, lock on or off, replication on or

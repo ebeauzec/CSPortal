@@ -4,6 +4,43 @@ Neutral release notes. Each entry says what changed and what is **not verified**
 
 ## Unreleased
 
+**Added (customer controls; see `docs/CUSTOMER_CONTROLS.md`)**
+- **Bucket access page**: readable list of the bucket policy; guided grants to a group, a storage user or the whole
+  storage account (read, read and write, upload only; whole bucket or one folder); public read on or off (plan
+  permitting); require encrypted connections; a policy editor with checks (own bucket and own account only, public
+  read only, no negated fields, short condition list, 20 KiB limit). Statements written by hand are kept. Needs the
+  administrator permission.
+- **CORS rules** and **Object Lock default retention** (governance or compliance, days or years) per bucket.
+- **Groups limited to named buckets**, changeable later; **storage users can change groups**. A scoped group cannot
+  list the account's other buckets.
+- **People**: change a role (ends the person's sessions), cancel an invitation, resend one (cancels the old link),
+  invitation status and expiry, sign out everywhere, unlock a locked account, role descriptions. Nobody changes
+  their own role.
+- **Access keys** can have an expiry (30, 90, 180 days, 1 year); the list shows the date and days left.
+- Connector reads versioning, lifecycle, policy, CORS and Object Lock on the bucket page and says when a setting
+  could not be read. Lifecycle rules the portal cannot describe are kept unchanged.
+- New unit and end-to-end tests (`tests/test_access.py`), including a fake TLS grid that checks S3 signatures.
+
+**Changed**
+- **Appearance**: a flatter, denser administrative look (dark top bar, small corner radius, bordered status tags, no
+  shadows). Branding colour and white-label settings work as before.
+- Changing a bucket's public access now needs the administrator permission (operators keep versioning, lifecycle,
+  Object Lock, CORS and keys).
+- Bucket list shows "-" for versioning and access on a real grid (one S3 call per bucket would be slow); the bucket
+  page shows them.
+
+**Fixed**
+- S3 requests for bucket settings sent sub-resource queries such as `?versioning` without the `=` that Signature V4
+  requires, so a real S3 endpoint would very probably have refused them. Now signed correctly and tested against the
+  AWS documentation example.
+- An invitation resent to a person left the older link working; only the newest link works now.
+
+**Not verified (customer controls)**
+- None of the above has run against a real StorageGRID. The group policy format, bucket policy principals, S3
+  settings calls with the tenant service key and access key expiry are the points most likely to differ by release.
+  The test plan is in `docs/STORAGEGRID_INTEGRATION.md`.
+- The CSS change was checked in a browser on the demo data only; no accessibility audit has been done.
+
 **Added**
 - `docs/compliance/CONTROL_MAP.md`: control map for ISO/IEC 27001:2022 Annex A and SOC 2 (security, availability,
   confidentiality), with the state of each control and the gaps that matter most.

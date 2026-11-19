@@ -52,9 +52,9 @@ console shows the result per customer, with the reason when something is missing
 | `system` (core) | admin | Health, logs, diagnostic bundle, backup, staff users, branding, demo reset | all | Built |
 | `catalogue` | admin | Plans, rate cards, feature switches, module switchboard | UC1, UC2 | Built |
 | `tenant-onboarding` | admin | Create, suspend, resume, close customers and their grid tenants | UC1 | Built |
-| `tenant-access` | customer | Portal users and roles; storage users and groups | UC1 | Built |
+| `tenant-access` | customer | Portal users, roles, invitations, sessions; storage users and groups scoped to buckets | UC1 | Built (1.1.0) |
 | `s3-access` | customer | Access-key lifecycle (shown once) and endpoint details | UC1 | Built |
-| `buckets` | customer | Buckets, versioning, lifecycle, access, Object Lock at creation, protection posture | UC3 | Built |
+| `buckets` | customer | Buckets, versioning, lifecycle, access policy, CORS, Object Lock and default retention, protection posture | UC3 | Built (1.1.0) |
 | `usage-billing` | both | Usage trends, monthly statements, adjustments, CSV export | UC2 | Built |
 | `capacity-alerts` | both | Quota meter, alerts, quota requests, status notices | UC4 | Built |
 | `audit-reports` | both | Customer activity history; provider audit with chain check | UC6 (part) | Built |

@@ -27,7 +27,9 @@ StorageGRID connector, demo mode, and the modules `catalogue`, `tenant-onboardin
 ## Release 2. Full tenant parity
 
 `federation`, `platform-services` (including grid federation), `object-browser`, `audit-reports`,
-`support`, remaining bucket features (CORS, default encryption, access-time updates).
+`support`, remaining bucket features (default encryption, access-time updates). CORS was built early (unreleased,
+after 0.1.0) together with bucket access policies, Object Lock default retention, scoped groups, role changes,
+invitation management and access key expiry; see [CUSTOMER_CONTROLS.md](CUSTOMER_CONTROLS.md).
 Close the gaps listed in [compliance/CONTROL_MAP.md](compliance/CONTROL_MAP.md) (dependency scan, audit retention,
 four-eyes approval, key rotation, personal-data export and deletion), then map processing integrity and privacy.
 

@@ -126,10 +126,50 @@ class Auth:
         return uid
 
     def invite_token(self, user_id: str, purpose: str = "set-password", hours: int = 72) -> str:
+        """A new single-use link. Earlier unused links for the same person and purpose stop working."""
+        self.db.run("DELETE FROM invitations WHERE user_id=? AND purpose=? AND used=0", (user_id, purpose))
         t = crypto.token()
         self.db.run("INSERT INTO invitations(token_hash,user_id,purpose,expires_at) VALUES (?,?,?,?)",
                     (crypto.hash_token(t), user_id, purpose, iso(utcnow() + dt.timedelta(hours=hours))))
         return t
+
+    def invite_state(self, user_id: str) -> tuple[str, str]:
+        """("open" | "expired" | "none", expiry time) for the newest unused invitation of a person."""
+        r = self.db.one("SELECT expires_at FROM invitations WHERE user_id=? AND used=0 ORDER BY expires_at DESC LIMIT 1", (user_id,))
+        if not r:
+            return "none", ""
+        return ("expired" if parse_iso(r["expires_at"]) < utcnow() else "open"), r["expires_at"]
+
+    def revoke_invites(self, user_id: str, actor: str, ip: str = "") -> int:
+        u = self.db.one("SELECT * FROM users WHERE id=?", (user_id,))
+        n = self.db.run("DELETE FROM invitations WHERE user_id=? AND used=0", (user_id,)).rowcount
+        if u and n:
+            self.audit.record("user.invite_revoked", actor, "user", u["customer_id"], u["email"], "", ip)
+        return n
+
+    def set_role(self, user_id: str, role: str, actor: str, ip: str = "") -> None:
+        """Change a role. Sessions end so the new permissions apply from the next sign-in."""
+        u = self.db.one("SELECT * FROM users WHERE id=?", (user_id,))
+        if not u:
+            raise AuthError("Person not found.")
+        if role not in (CUSTOMER_ROLES if u["customer_id"] else CSP_ROLES):
+            raise AuthError("Unknown role.")
+        if role == u["role"]:
+            return
+        self.db.run("UPDATE users SET role=? WHERE id=?", (role, user_id))
+        self.db.run("DELETE FROM sessions WHERE user_id=?", (user_id,))
+        self.audit.record("user.role_change", actor, "user", u["customer_id"], u["email"], f"{u['role']} -> {role}", ip)
+
+    def is_locked(self, user) -> bool:
+        lu = user["locked_until"]
+        return bool(lu) and parse_iso(lu) > utcnow()
+
+    def unlock(self, user_id: str, actor: str, ip: str = "") -> None:
+        u = self.db.one("SELECT * FROM users WHERE id=?", (user_id,))
+        if not u:
+            return
+        self.db.run("UPDATE users SET failed=0, locked_until=NULL WHERE id=?", (user_id,))
+        self.audit.record("user.unlocked", actor, "user", u["customer_id"], u["email"], "", ip)
 
     def redeem_invite(self, token: str, password: str, ip: str = "") -> str:
         h = crypto.hash_token(token)

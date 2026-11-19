@@ -61,7 +61,7 @@ Customers use the S3 endpoints directly for data. The portal is control plane on
 | Tenant usage and quota | Tenant Management API | usage | verify |
 | S3 endpoint URLs shown to the customer | Grid Management API | load-balancer endpoints | verify |
 
-## Implementation (version 0.1.0)
+## Implementation (unreleased, after 0.1.0)
 
 The connector is `csportal/backends/storagegrid.py`; the interface is `csportal/backends/base.py`.
 
@@ -74,7 +74,18 @@ The connector is `csportal/backends/storagegrid.py`; the interface is `csportal/
   tenant); tokens are refreshed on expiry or a 401.
 - Per tenant, the portal creates a dedicated group and a service user and keeps its credentials in encrypted
   storage (ADR-004, option A). Bucket settings that StorageGRID exposes only through the S3 API (versioning,
-  lifecycle, policy) are applied with that user's S3 key using Signature V4.
+  lifecycle, bucket policy, CORS, Object Lock default retention) are read and written with that user's S3 key using
+  Signature V4 (`csportal/backends/s3sign.py`, `s3xml.py`). The signer is tested against the worked example in the
+  AWS Signature Version 4 documentation. An earlier version of the signer sent sub-resource queries such as
+  `?versioning` without the `=` that Signature V4 requires, so it would very probably have been refused by a real S3
+  endpoint; that is fixed and covered by a test. Settings calls that carry a body also send `Content-MD5`.
+- **Bucket page reads** (one S3 call each): versioning, lifecycle, policy, CORS and, on locked buckets, Object Lock.
+  A setting that cannot be read is reported on the page; it is never shown as empty. The bucket list does not make
+  these calls (it shows "-" for versioning and access) so that a long list stays fast.
+- **Lifecycle rules the portal cannot describe** (tags, transitions, date expiry) are kept as the original XML and
+  written back unchanged when another rule changes.
+- **Group policies** are written as S3 statements on the group (`/org/groups/{id}`, `PUT` to change). A group limited
+  to buckets lists those buckets and their objects as resources and is not allowed `ListAllMyBuckets`.
 - Client behaviour: timeouts, back-off on throttling and gateway errors for reads, a circuit breaker, TLS with
   verification always on, grid error text cleaned of secrets before display.
 - **Connection settings** are entered in the admin console (Storage grid page) or the configuration file; see
@@ -86,18 +97,38 @@ The connector is `csportal/backends/storagegrid.py`; the interface is `csportal/
   API version, sign-in, the two permissions the portal needs, S3 answer) before and after saving. It is tested here
   against a fake admin node that speaks real TLS; that is not a substitute for the verification plan below.
 - Load balancer endpoints are entered by hand. The connector does not discover them from the grid.
-- Not covered yet: platform services, identity source, grid federation, Object Lock retention rules,
-  CORS, default encryption (see [TENANT_PARITY.md](TENANT_PARITY.md)).
+- Customer controls built on these calls are listed in [CUSTOMER_CONTROLS.md](CUSTOMER_CONTROLS.md).
+- Not covered yet: platform services, identity source, grid federation, default encryption, legal hold
+  (see [TENANT_PARITY.md](TENANT_PARITY.md)).
+- Possible fault, to settle on a real grid: `create_tenant` generates a password for the service user but does not
+  set it, and stores the tenant root credentials as the working credential. If the grid does not accept the root
+  credentials for the calls the portal makes, the service user needs a password set at creation.
 
-### Verification plan (run on a non-production grid before use)
+### Test plan for a real grid
 
-1. `conformance` reports every call `ok`.
-2. Create a tenant from the admin console; confirm account, quota, group and service user on the grid.
-3. As the customer: create a bucket with versioning, add a lifecycle rule, create a storage user and an
-   access key; use the key with an S3 client to put and get an object.
-4. Change the quota; confirm the grid and the portal agree. Suspend and resume.
-5. Compare the portal's usage figure with the grid's own figure for the same tenant.
-6. Record the grid release and the result in [CHANGELOG.md](../CHANGELOG.md) and update the status above.
+Run it on a non-production grid before real customers use the portal. Write the grid release and the result of each
+step in [CHANGELOG.md](../CHANGELOG.md), then change the status in this page, the README and
+[TENANT_PARITY.md](TENANT_PARITY.md). Use a throw-away tenant and bucket names that cannot clash with real data.
+
+| # | Step | Expected result |
+|---|---|---|
+| 1 | Admin console > Storage grid > Test these settings | Every step ok for every admin node and endpoint |
+| 2 | `python -m csportal conformance` | Every call `ok` (this now includes `PUT /org/groups/{id}`) |
+| 3 | Create a tenant from the admin console | Account, quota, group `csportal-service` and user exist on the grid. **Open question:** the service user's credentials work for the calls in steps 5-12 (see the possible fault in Implementation) |
+| 4 | Customer: invite a person, accept, sign in with MFA | Sign-in works; role change signs the person out |
+| 5 | Create a bucket with versioning; list buckets | Bucket appears with the right region; versioning "enabled" on the bucket page |
+| 6 | Add, change, remove a lifecycle rule; on the grid add a rule with a tag filter, then change another rule in the portal | The tag rule is unchanged on the grid |
+| 7 | Create a group limited to one bucket, a storage user in it, an access key with a 30-day expiry | With an S3 client: put/get in that bucket works; listing or reading another bucket is refused; the grid shows the expiry |
+| 8 | Change the group to read only | Put is now refused, get still works |
+| 9 | Bucket access: grant a group read on one folder | The group reads inside the folder and is refused outside it; the portal shows the grant |
+| 10 | Make the bucket public (plan allows), read an object without credentials, make it private | Anonymous read works, then fails |
+| 11 | Require encrypted connections; try a plain-HTTP request if the gateway allows one | Refused. If the gateway serves only HTTPS, record that the rule has no visible effect |
+| 12 | CORS: add a rule, send a browser-style preflight from an allowed origin | Allowed headers come back; a different origin gets none |
+| 13 | Object Lock bucket: set default retention (governance), write an object | Object shows the retention; delete is refused |
+| 14 | Paste a policy that names another bucket, another account, public write | Each is refused by the portal; nothing changes on the grid |
+| 15 | Change the quota; suspend and resume | Grid and portal agree; suspended users cannot use keys |
+| 16 | Compare the portal's usage figure with the grid's own for the same tenant | Same figure within the grid's reporting delay |
+| 17 | Stop the primary admin node (or block it) | Portal moves to the next node; the bucket page still loads |
 
 ## Supported release range
 

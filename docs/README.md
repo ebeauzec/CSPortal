@@ -6,6 +6,7 @@ Start with the [project README](../README.md). Documentation is kept true with t
 | Page | What it covers |
 |---|---|
 | [USE_CASES.md](USE_CASES.md) | The customer journeys: onboarding, usage and billing, buckets and protection, capacity and alerts |
+| [CUSTOMER_CONTROLS.md](CUSTOMER_CONTROLS.md) | Everything a customer administrator can do: roles, people, groups, keys, bucket access policy, CORS, Object Lock, with checks and audit actions |
 | [TENANT_PARITY.md](TENANT_PARITY.md) | Every StorageGRID tenant capability, the module that covers it, and its status |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Principles, components, key flows, deployment shape |
 | [MODULES.md](MODULES.md) | The module contract, entitlement, modules built and planned |

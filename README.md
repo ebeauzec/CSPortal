@@ -31,9 +31,9 @@ accounts. See [docs/DEMO.md](docs/DEMO.md).
 
 | | Use case | Customer sees | CSP controls |
 |---|---|---|---|
-| UC1 | Tenant onboarding and access | Invitation, sign-in with MFA, people and roles, storage users and groups, S3 keys (shown once) | Plans, create/suspend/close customers, feature switches |
+| UC1 | Tenant onboarding and access | Invitation (cancel, resend), sign-in with MFA, people and role changes, storage users and groups scoped to buckets, S3 keys (shown once, optional expiry) | Plans, create/suspend/close customers, feature switches |
 | UC2 | Usage, metering, billing | Usage trends, by-bucket view, month-to-date estimate, monthly statements, CSV | Rate cards, month close, adjustments, exports |
-| UC3 | Buckets and data protection | Create buckets, versioning, lifecycle, public-access guard, Object Lock, protection panel | Per-plan limits on buckets, public access, Object Lock |
+| UC3 | Buckets and data protection | Create buckets, versioning, lifecycle, per-bucket access rules and policy editor, public-access guard, encrypted-connections-only, CORS, Object Lock default retention, protection panel | Per-plan limits on buckets, public access, Object Lock |
 | UC4 | Capacity and alerts | Quota meter, e-mail alerts, quota requests, service notices | Approval queue, auto-approve rules, notices |
 
 Details: [docs/USE_CASES.md](docs/USE_CASES.md). What a tenant can do on StorageGRID and where it lives in the portal:
@@ -49,7 +49,7 @@ Version 0.1.0, a release candidate for Release 1. Be clear about what that means
 | StorageGRID connector | **Written, not yet verified on a real grid.** Run `python -m csportal conformance` against your grid first; see [docs/STORAGEGRID_INTEGRATION.md](docs/STORAGEGRID_INTEGRATION.md) |
 | Security | Designed per [docs/SECURITY.md](docs/SECURITY.md); implementation status listed there. **Not yet independently penetration tested** |
 | Scale and availability | Single node, embedded database. No clustering yet |
-| Release 2 features (platform services, own identity provider, object browser, support, CORS) | Planned; see [docs/ROADMAP.md](docs/ROADMAP.md) |
+| Release 2 features (platform services, own identity provider, object browser, support, default encryption) | Planned; see [docs/ROADMAP.md](docs/ROADMAP.md) |
 
 Verify on a non-production grid, run your own security review and test restores before serving customers.
 
