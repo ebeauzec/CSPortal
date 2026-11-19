@@ -39,7 +39,7 @@ jobs:
           python -m venv /tmp/product-env
           /tmp/product-env/bin/pip install -r requirements.txt
           cyclonedx-py environment /tmp/product-env --of JSON -o sbom.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: sbom.cdx.json
