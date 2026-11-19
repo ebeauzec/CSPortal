@@ -110,6 +110,9 @@ reasoning behind it. Both are updated whenever the design changes.
 | Hash-chained audit log with verification command and page | Built; tested |
 | Immutable closed statements; linked adjustments | Built; tested |
 | Single-use invitation links; stored mail copy loses the link after delivery | Built; tested |
+| Settings and grid connection editable in the admin console by super administrators only; values validated; every change audited with old and new value (never secrets); settings weaker than recommended flagged | Built; tested |
+| Grid and mail passwords: encrypted with the master key, write-only in the console, never in logs, audit records, pages or the diagnostic bundle | Built; tested |
+| Certificate checking on the grid connection cannot be turned off; the password is sent only after the certificate is verified; a pasted private key is refused; loopback and link-local grid addresses refused outside demo mode | Built; tested |
 | Re-authentication before dangerous actions | Planned |
 | Second approver for destructive provider actions | Planned |
 | WebAuthn security keys; single sign-on for staff | Planned |

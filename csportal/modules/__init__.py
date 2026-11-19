@@ -6,7 +6,7 @@ import logging
 
 log = logging.getLogger("csportal")
 
-ORDER = ["core_accounts", "tenant_dashboard", "system", "catalogue", "tenant_onboarding", "tenant_access", "s3_access",
+ORDER = ["core_accounts", "tenant_dashboard", "system", "settings", "catalogue", "tenant_onboarding", "tenant_access", "s3_access",
          "buckets", "usage_billing", "capacity_alerts", "audit_reports"]
 
 

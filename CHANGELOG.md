@@ -11,6 +11,17 @@ Neutral release notes. Each entry says what changed and what is **not verified**
 - CI job `dependency-scan`: `pip-audit` on `requirements.txt` (fails the build on a known vulnerability), a
   CycloneDX software bill of materials published as a build artifact, and a weekly scheduled run.
 - Dependabot configuration for Python packages, the base image and workflow actions.
+- **Admin console settings** (`/settings`): every configuration parameter in one place with its value, source
+  (default, file or console) and when a change takes effect. Session, security, logging, mail and job settings
+  can be changed by a super administrator; start-up settings (addresses, ports, certificates, master key) are shown
+  and edited in the file. Values are validated, changes are audited, weaker-than-recommended settings are flagged.
+- **Storage grid connection page** (`/grid`): admin nodes (primary and failover), management API version, grid
+  account and user, write-only encrypted password, trusted CA certificates (with fingerprints and expiry), S3 gateway
+  endpoints with regions and notes, request timeout. Step-by-step **connection test** (before and after saving),
+  and a **sheet for the grid administrators** (permissions, network rules, per-tenant objects, certificates, last
+  test) as a page and a text download. The connector now supports several admin nodes with failover and uses the
+  configured endpoints and regions. The portal starts without grid details and says so. Mail password can be saved
+  encrypted in the console. `grid_connection.json` added to the diagnostic bundle. See `docs/ADMIN_CONSOLE.md`.
 - CI job `image-scan`: builds the production image and scans it (operating-system and Python packages) with
   Trivy 0.76.2, run as a container pinned by digest. A HIGH or CRITICAL finding with a fix available fails the
   build; the JSON report is kept as a build artifact. The same job proves the Dockerfile builds.

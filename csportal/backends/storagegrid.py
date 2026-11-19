@@ -56,23 +56,51 @@ class StorageGridBackend(StorageBackend):
     verified = False
     description = "StorageGRID Grid Management API, Tenant Management API and S3 API (unverified)"
 
-    def __init__(self, base_url: str, api_version: str, grid_account: str, grid_user: str,
-                 grid_password: Callable[[], str], ca_file: str = "", verify_tls: bool = True,
-                 s3_endpoint: str = "",
+    def __init__(self, conn, grid_password: Callable[[], str],
                  get_creds: Callable[[str], dict | None] | None = None,
                  put_creds: Callable[[str, dict], None] | None = None):
-        self.base = base_url.rstrip("/")
-        self.ver = api_version
-        self.grid_account, self.grid_user, self._grid_pw = grid_account, grid_user, grid_password
-        self.s3_endpoint = s3_endpoint.rstrip("/")
+        """`conn` is a settings.GridConn: admin nodes (the first is the primary), API version, grid account and user,
+        trusted certificates and the S3 gateway endpoints. Certificate checking is always on."""
+        from .gridcheck import tls_context
+        self.bases = conn.base_urls()                     # empty until an administrator enters the admin nodes
+        self._active = 0                                  # index of the admin node that answered last
+        self.ver = conn.api_version
+        self.grid_account, self.grid_user, self._grid_pw = conn.account_id, conn.username, grid_password
+        self.s3_endpoints = list(conn.endpoints)
+        self.s3_endpoint = self.s3_endpoints[0].url.rstrip("/") if self.s3_endpoints else ""      # used for bucket settings
+        self.s3_region = self.s3_endpoints[0].region if self.s3_endpoints else "us-east-1"
+        self.timeout = float(conn.timeout)
         self.get_creds, self.put_creds = get_creds, put_creds
-        self.ctx = ssl.create_default_context(cafile=ca_file or None)
-        if not verify_tls:
-            raise BackendError("tls", "Certificate checking cannot be turned off.")
+        self.ctx = tls_context(conn)
         self._tokens: dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
         self._fails = 0
         self._open_until = 0.0
+
+    @property
+    def base(self) -> str:
+        return self.bases[self._active] if self.bases else ""
+
+    def _mgmt(self, method: str, path: str, headers: dict, body: bytes | None = None):
+        """Call the management API on the admin nodes in order, starting with the one that answered last.
+        Moves to the next node only when a node can not be reached."""
+        if not self.bases:
+            raise BackendError("not_configured", "The storage grid connection is not set up yet. An administrator must enter it under Storage grid.", 503)
+        last: BackendError | None = None
+        for i in range(len(self.bases)):
+            idx = (self._active + i) % len(self.bases)
+            try:
+                res = self._http(method, self.bases[idx] + path, headers, body, self.timeout)
+            except BackendError as e:
+                if e.code != "backend_unavailable":
+                    raise
+                last = e
+                continue
+            if idx != self._active:
+                logs.event(log, logging.WARNING, "storage admin node changed", node=self.bases[idx])
+                self._active = idx
+            return res
+        raise last or BackendError("backend_unavailable", "The storage service could not be reached.", 503)
 
     # ------------------------------------------------------------------ http
     def _http(self, method: str, url: str, headers: dict, body: bytes | None = None, timeout: float = 20):
@@ -102,7 +130,7 @@ class StorageGridBackend(StorageBackend):
 
     def _api(self, scope: str, method: str, path: str, body: Any = None, params: dict | None = None):
         """scope is 'grid' or a tenant reference. Returns the 'data' member of the response."""
-        url = f"{self.base}/api/{self.ver}{path}" + (("?" + urllib.parse.urlencode(params)) if params else "")
+        url = f"/api/{self.ver}{path}" + (("?" + urllib.parse.urlencode(params)) if params else "")
         for retry in (0, 1):
             tok = self._token(scope, force=bool(retry))
             hdrs = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
@@ -110,7 +138,7 @@ class StorageGridBackend(StorageBackend):
             if body is not None:
                 data = json.dumps(body).encode()
                 hdrs["Content-Type"] = "application/json"
-            status, raw = self._http(method, url, hdrs, data)
+            status, raw = self._mgmt(method, url, hdrs, data)
             if status == 401 and not retry:
                 continue
             break
@@ -143,7 +171,7 @@ class StorageGridBackend(StorageBackend):
             if not c:
                 raise BackendError("no_credentials", "No service credentials are stored for this storage account.", 500)
             acct, user, pw = scope, c["username"], c["password"]
-        status, raw = self._http("POST", f"{self.base}/api/{self.ver}/authorize",
+        status, raw = self._mgmt("POST", f"/api/{self.ver}/authorize",
                                  {"Content-Type": "application/json", "Accept": "application/json"},
                                  json.dumps({"accountId": acct, "username": user, "password": pw,
                                              "cookie": False, "csrfToken": False}).encode())
@@ -168,10 +196,10 @@ class StorageGridBackend(StorageBackend):
         hdrs = {"host": host, "x-amz-date": amz, "x-amz-content-sha256": phash}
         signed = ";".join(sorted(hdrs))
         creq = "\n".join([method, path, canon_q, "".join(f"{k}:{hdrs[k]}\n" for k in sorted(hdrs)), signed, phash])
-        scope = f"{day}/us-east-1/s3/aws4_request"
+        scope = f"{day}/{self.s3_region}/s3/aws4_request"
         sts = "\n".join(["AWS4-HMAC-SHA256", amz, scope, hashlib.sha256(creq.encode()).hexdigest()])
         k = ("AWS4" + c["s3_secret"]).encode()
-        for part in (day, "us-east-1", "s3", "aws4_request"):
+        for part in (day, self.s3_region, "s3", "aws4_request"):
             k = hmac.new(k, part.encode(), hashlib.sha256).digest()
         sig = hmac.new(k, sts.encode(), hashlib.sha256).hexdigest()
         out = {"x-amz-date": amz, "x-amz-content-sha256": phash,
@@ -183,7 +211,7 @@ class StorageGridBackend(StorageBackend):
     # ------------------------------------------------------------------ service
     def health(self) -> dict:
         try:
-            status, raw = self._http("GET", f"{self.base}/api/versions", {"Accept": "application/json"})
+            status, raw = self._mgmt("GET", "/api/versions", {"Accept": "application/json"})
             doc = json.loads(raw.decode() or "{}")
             versions = doc.get("data", doc) if isinstance(doc, dict) else doc
             ok = status == 200 and (self.ver.lstrip("v") in [str(v).lstrip("v") for v in (versions or [])] or self.ver in str(versions))
@@ -200,7 +228,9 @@ class StorageGridBackend(StorageBackend):
                 "raw_health": h}
 
     def endpoints(self, ref: str) -> dict:
-        return {"s3": [self.s3_endpoint] if self.s3_endpoint else [], "regions": ["us-east-1"]}
+        regions = list(dict.fromkeys(e.region for e in self.s3_endpoints)) or ["us-east-1"]
+        return {"s3": [e.url for e in self.s3_endpoints], "regions": regions,
+                "details": [{"name": e.name, "url": e.url, "region": e.region, "note": e.note} for e in self.s3_endpoints]}
 
     # ------------------------------------------------------------------ tenants
     def create_tenant(self, name, quota_bytes, features) -> str:
@@ -393,7 +423,7 @@ class StorageGridBackend(StorageBackend):
         doc = None
         for p in ("/api/docs/swagger.json", "/api/docs/openapi.json", f"/api/{self.ver}/docs/swagger.json"):
             try:
-                st, raw = self._http("GET", self.base + p, {"Accept": "application/json"})
+                st, raw = self._mgmt("GET", p, {"Accept": "application/json"})
                 if st == 200:
                     doc = json.loads(raw.decode())
                     break

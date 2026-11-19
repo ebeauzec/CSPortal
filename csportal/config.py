@@ -59,6 +59,7 @@ class Config:
     def __init__(self, data: dict, path: str = ""):
         self.d = data
         self.path = path
+        self.file_d = copy.deepcopy(data)      # what the file, environment and defaults say, before console changes
 
     def __getitem__(self, k):
         return self.d[k]
@@ -122,8 +123,8 @@ def validate(cfg: Config) -> list[str]:
             p.append("production mode needs TLS (tls.customer_cert) or behind_proxy=true")
         if d["backend"]["type"] == "storagegrid":
             sg = d["backend"]["storagegrid"]
-            if not sg["base_url"].startswith("https://"):
-                p.append("backend.storagegrid.base_url must be an https:// URL")
+            if sg["base_url"] and not sg["base_url"].startswith("https://"):
+                p.append("backend.storagegrid.base_url must be an https:// URL (or leave it empty and enter the admin nodes in the admin console)")
             if not sg["verify_tls"]:
                 p.append("backend.storagegrid.verify_tls cannot be false in production mode")
         if d["admin_listen"]["host"] in ("0.0.0.0", "::") and not d["behind_proxy"]:

@@ -64,14 +64,14 @@ def send_mail(app, to: str, subject: str, body: str, customer_id: str | None = N
         app.db.run("UPDATE outbox SET state=? WHERE id=?", ("captured" if app.cfg.demo else "not-configured", mid))
         return mid
     try:
-        import os
+        from . import settings
         msg = EmailMessage()
         msg["From"], msg["To"], msg["Subject"] = smtp["from"], to, subject
         msg.set_content(body)
         with smtplib.SMTP(smtp["host"], int(smtp["port"]), timeout=20) as s:
             if smtp["starttls"]:
                 s.starttls(context=ssl.create_default_context())
-            pw = os.environ.get(smtp["password_env"], "")
+            pw = settings.smtp_password(app)
             if smtp["username"] and pw:
                 s.login(smtp["username"], pw)
             s.send_message(msg)

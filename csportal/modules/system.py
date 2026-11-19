@@ -45,6 +45,14 @@ def build_bundle(app) -> bytes:
         "connector_verified_on_real_grid": app.backend.verified}, indent=2)
     files["config.json"] = json.dumps(_scrub_cfg(app.cfg.d), indent=2)
     files["backend_health.json"] = json.dumps(app.backend.health(), indent=2)
+    from .. import settings as S
+    gc = S.load_grid(app.cfg, app.db)
+    files["grid_connection.json"] = json.dumps({
+        "admin_nodes": [vars(n) for n in gc.nodes], "api_version": gc.api_version, "account_id": gc.account_id, "username": gc.username,
+        "password": S.grid_password_source(app.cfg, app.db), "ca_certificates": S.cert_infos(gc.ca_pem)[0], "ca_file": gc.ca_file,
+        "source_address": gc.source_address, "timeout": gc.timeout, "s3_endpoints": [vars(e) for e in gc.endpoints],
+        "active_admin_node": getattr(app.backend, "base", ""), "last_test": S.last_test(app.db),
+        "settings_changed_in_console": [r["key"] for r in app.db.all("SELECT key FROM settings WHERE key LIKE 'cfg.%' ORDER BY key")]}, indent=2)
     files["audit_chain.json"] = json.dumps({"intact": ok, "first_bad_id": bad, "records": n})
     files["jobs.json"] = json.dumps([dict(r) for r in app.db.all("SELECT * FROM jobs_state")], indent=2)
     files["customers_summary.json"] = json.dumps([dict(r) for r in app.db.all(

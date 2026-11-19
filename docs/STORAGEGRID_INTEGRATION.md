@@ -77,6 +77,15 @@ The connector is `csportal/backends/storagegrid.py`; the interface is `csportal/
   lifecycle, policy) are applied with that user's S3 key using Signature V4.
 - Client behaviour: timeouts, back-off on throttling and gateway errors for reads, a circuit breaker, TLS with
   verification always on, grid error text cleaned of secrets before display.
+- **Connection settings** are entered in the admin console (Storage grid page) or the configuration file; see
+  [ADMIN_CONSOLE.md](ADMIN_CONSOLE.md#3-the-storage-grid-connection-grid). Several admin nodes can be listed: the
+  connector uses the primary and moves to the next node only when a node cannot be reached, and it signs in again
+  on the new node. S3 gateway endpoints and their regions come from the same page and are what customers see; the
+  first is used for bucket settings, and requests are signed for that endpoint's region.
+- **Connection test:** the console checks each admin node and each S3 endpoint step by step (network, certificate,
+  API version, sign-in, the two permissions the portal needs, S3 answer) before and after saving. It is tested here
+  against a fake admin node that speaks real TLS; that is not a substitute for the verification plan below.
+- Load balancer endpoints are entered by hand. The connector does not discover them from the grid.
 - Not covered yet: platform services, identity source, grid federation, Object Lock retention rules,
   CORS, default encryption (see [TENANT_PARITY.md](TENANT_PARITY.md)).
 

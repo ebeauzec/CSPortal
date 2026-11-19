@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import logging
-import os
 
-from . import crypto, logs, services
+from . import crypto, logs, services, settings
 from .audit import Audit
 from .auth import Auth
 from .backends.sim import Simulator
@@ -15,28 +14,30 @@ from .web.core import App
 log = logging.getLogger("csportal")
 
 
-def build_backend(cfg: Config, app_ref: dict):
-    bt = cfg.d["backend"]["type"]
-    if bt == "simulator":
+def build_backend(cfg: Config, db: Database, box: crypto.SecretBox, app_ref: dict):
+    """The storage connector. For a real grid the connection (admin nodes, endpoints, certificates, credentials)
+    comes from what was saved in the admin console, or from the configuration file when nothing was saved."""
+    if cfg.d["backend"]["type"] == "simulator":
         return Simulator(cfg.data_dir / "sim_state.json", seed=7)
     from .backends.storagegrid import StorageGridBackend
-    sg = cfg.d["backend"]["storagegrid"]
     return StorageGridBackend(
-        sg["base_url"], sg["api_version"], sg["account_id"], sg["username"],
-        lambda: os.environ.get(sg["password_env"], ""), sg["ca_file"], sg["verify_tls"], sg["s3_endpoint"],
+        settings.load_grid(cfg, db), lambda: settings.grid_password(cfg, db, box),
         get_creds=lambda ref: services.grid_creds_getter(app_ref["app"])(ref),
         put_creds=lambda ref, c: services.grid_creds_putter(app_ref["app"])(ref, c))
 
 
 def build_app(cfg: Config, seed_demo: bool = True) -> App:
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
-    log_dir = logs.setup(cfg)
     db = Database(cfg.data_dir / "csportal.db")
     box = crypto.SecretBox(crypto.load_master_key(cfg))
+    bad = settings.apply_overrides(cfg, db)             # values saved in the admin console
+    log_dir = logs.setup(cfg)
+    for b in bad:
+        logs.event(log, logging.WARNING, "ignored a saved setting", detail=b)
     audit = Audit(db)
     auth = Auth(cfg, db, box, audit)
     ref: dict = {}
-    backend = build_backend(cfg, ref)
+    backend = build_backend(cfg, db, box, ref)
     app = App(cfg, db, audit, auth, box, backend)
     ref["app"] = app
     app.log_dir = log_dir

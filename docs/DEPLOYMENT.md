@@ -22,10 +22,12 @@ CSPortal is one image and one process. This page covers a production install. Fo
    python -m csportal genkey
    ```
    Store it in your secret store. It encrypts every stored credential. Losing it means re-entering them.
-2. **Write the configuration.** Copy `deploy/config.example.json` to `deploy/config.json` and set the public URL,
-   grid address, CA file, S3 endpoint, mail relay and branding. Production mode refuses to start unless TLS is
-   handled (`behind_proxy` or certificates), the grid URL is `https://`, certificate checking is on, and the
-   admin console is not on a public address.
+2. **Write the configuration.** Copy `deploy/config.example.json` to `deploy/config.json` and set the public URLs,
+   mail relay and branding. Production mode refuses to start unless TLS is handled (`behind_proxy` or
+   certificates), any grid URL given is `https://`, certificate checking is on, and the admin console is not on a
+   public address. The grid connection (admin nodes, S3 endpoints, account, user, certificates) can be left out
+   of the file and entered in the admin console instead (step 5); if it is in the file, the console shows it and
+   a value saved in the console wins. See [ADMIN_CONSOLE.md](ADMIN_CONSOLE.md) for every setting.
 3. **Set the secrets as environment variables** (not in the file): `CSPORTAL_MASTER_KEY`,
    `CSPORTAL_GRID_PASSWORD`, and `CSPORTAL_SMTP_PASSWORD` if used.
 4. **Start.**
@@ -33,18 +35,23 @@ CSPortal is one image and one process. This page covers a production install. Fo
    docker compose up -d
    ```
    The customer portal listens on 8443 (behind your proxy); the admin console on 8444 on a private address.
-5. **Check the connector before you trust it.**
+5. **Create the first administrator.**
+   ```
+   docker compose exec csportal python -m csportal init-admin --email you@example.net --name "Your Name"
+   ```
+   Open the printed link from the private network, set a password, and set up multi-factor authentication.
+6. **Connect to the grid in the admin console:** open **Storage grid**, enter the admin nodes, account, user,
+   password, CA certificates and S3 endpoints, use **Test these settings first**, then **Save and apply**. Download
+   the sheet and give it to the grid administrators. The full walk-through is in
+   [ADMIN_CONSOLE.md](ADMIN_CONSOLE.md#3-the-storage-grid-connection-grid). Until then the portal runs and says the
+   grid is not set up.
+7. **Check the connector before you trust it** (System health, **Run API conformance check**, or):
    ```
    docker compose exec csportal python -m csportal conformance
    ```
    Every call the connector uses must report `ok` against your grid's own API description. Fix or report any that
    do not. Until the connector has been verified on your release, run it against a non-production grid first.
-6. **Create the first administrator.**
-   ```
-   docker compose exec csportal python -m csportal init-admin --email you@example.net --name "Your Name"
-   ```
-   Open the printed link from the private network, set a password, and set up multi-factor authentication.
-7. **Configure in the admin console:** branding, plans (price, quota, features), then create a test customer
+8. **Configure in the admin console:** branding, plans (price, quota, features), then create a test customer
    and walk through the customer journey.
 
 ## Network layout
