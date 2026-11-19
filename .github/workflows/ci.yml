@@ -63,6 +63,7 @@ jobs:
         run: |
           run_trivy() { docker run --rm --user "$(id -u):$(id -g)" -e TRIVY_CACHE_DIR=/tmp/trivy-cache -v "$PWD:/work" -w /work "$TRIVY" "$@"; }
           run_trivy image --input image.tar --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --format json --output image-scan.json --exit-code 0
+          python tools/scan_findings.py image-scan.json
           run_trivy image --input image.tar --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
       - uses: actions/upload-artifact@v7
         if: always()
