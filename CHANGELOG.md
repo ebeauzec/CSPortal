@@ -18,8 +18,8 @@ Neutral release notes. Each entry says what changed and what is **not verified**
   THIRD_PARTY_NOTICES.md lists them. Earlier text saying "one third-party package" was incomplete.
 
 **Not verified**
-- The dependency scan was run locally and found no known vulnerabilities. Its first run in GitHub Actions has
-  not been seen yet. It covers Python packages only, not the base image or host.
+- The dependency scan found no known vulnerabilities, locally and in its first GitHub Actions run (2026-11-19).
+  It covers Python packages only, not the base image or host.
 - The control map is a mapping of the product's own design to the controls. No audit, certificate or independent
   review has been done. Control numbering should be checked against the edition the auditor uses.
 
