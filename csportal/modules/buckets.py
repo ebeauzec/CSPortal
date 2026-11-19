@@ -5,15 +5,46 @@ import re
 
 from .. import policy, services
 from ..backends import s3xml
+from ..backends.base import BackendError
 from ..util import esc, human_bytes, valid_bucket_name
 from ..web import ui
 from ..web.core import Raw, html_response, redirect
 
-MODULE = {"id": "buckets", "name": "Buckets and data protection", "version": "1.1.0", "surfaces": ["customer"],
-          "requires": [], "description": "Create and protect buckets: versioning, lifecycle, Object Lock, access policy, CORS.",
+MODULE = {"id": "buckets", "name": "Buckets and data protection", "version": "1.2.0", "surfaces": ["customer"],
+          "requires": [], "description": "Guided bucket creation; protect buckets: versioning, lifecycle, Object Lock, access policy, CORS.",
           "nav": [{"surface": "customer", "label": "Buckets", "path": "/buckets", "perm": "buckets.view", "group": "Storage", "order": 10}]}
 
 _RULE_ID = re.compile(r"[^A-Za-z0-9_.-]")
+
+
+def name_problem(n: str) -> tuple[str, str]:
+    """(plain-words problem, suggested name) for a bucket name; ("", "") when the name is fine."""
+    sug = re.sub(r"-{2,}", "-", re.sub(r"[^a-z0-9.-]", "-", n.strip().lower())).strip("-.")
+    sug = sug.replace("..", ".")
+    if len(n) < 3:
+        return "A bucket name needs at least 3 characters.", ""
+    if len(n) > 63:
+        return "A bucket name can have at most 63 characters.", sug[:63]
+    if n != n.lower():
+        return "Use lowercase letters only.", sug
+    if re.search(r"[^a-z0-9.-]", n):
+        return "Use only lowercase letters, numbers, dots and hyphens. No spaces or underscores.", sug
+    if not re.match(r"^[a-z0-9]", n) or not re.search(r"[a-z0-9]$", n):
+        return "The name must start and end with a letter or number.", sug
+    if ".." in n or re.match(r"^\d+\.\d+\.\d+\.\d+$", n):
+        return "Two dots in a row, or a name that looks like an IP address, is not allowed.", sug
+    return "", ""
+
+
+_PURPOSE_HELP = {
+    "keep-versions": ("Keep old versions (recommended)", "If a file is deleted or overwritten by mistake, you can get the earlier copy back."),
+    "latest-only": ("Keep only the latest version", "Uses less space. A deleted or overwritten file cannot be recovered."),
+    "locked": ("Lock objects so nobody can delete or change them", "For records that must be kept unchanged for a set time. This choice cannot be undone later."),
+}
+
+
+def _int(v: str, hi: int) -> int:
+    return min(max(int(v), 1), hi) if v.strip().isdigit() else 0
 
 
 def register(app):
@@ -45,9 +76,16 @@ def register(app):
         if plan["allow_object_lock"]:
             fields.append({"name": "object_lock", "label": "Enable Object Lock (cannot be changed later)", "type": "checkbox",
                            "help": "Protects objects from deletion or change for a retention period you choose."})
-        create = ui.card(f"Create a bucket ({len(bs)} of {plan['max_buckets']} used)",
-                         ui.form("/buckets", fields, ctx.sess.csrf, "Create bucket")) if ctx.can("buckets.edit") else ""
-        return ui.page(ctx, "Buckets", Raw(tbl + create), "/buckets")
+        create = ""
+        if ctx.can("buckets.edit"):
+            full = len(bs) >= plan["max_buckets"]
+            create = ui.card(f"Create a bucket ({len(bs)} of {plan['max_buckets']} used)", Raw(
+                "<p>A <strong>bucket</strong> is a top-level folder for your files. Creating one takes about a minute:</p>"
+                '<ol class="howto"><li>Choose a name and a region.</li><li>Choose how the data is protected.</li>'
+                "<li>Optionally let old data clean itself up.</li><li>Create an access key so an application can use the bucket.</li></ol>" +
+                ("<p class='muted'>Your plan's bucket limit is reached. Delete an empty bucket or ask your provider for more.</p>" if full else
+                 "<p>" + str(ui.link("/buckets/new", "Create a bucket", "btn primary")) + "</p>")))
+        return ui.page(ctx, "Buckets", Raw((create if not bs else "") + tbl + (create if bs else "")), "/buckets")
 
     @app.route("customer", "POST", "/buckets", perm="buckets.edit", module="buckets")
     def create(ctx):
@@ -63,6 +101,162 @@ def register(app):
         ctx.audit("bucket.create", name, f"versioning={bool(ctx.f('versioning')) or lock} lock={lock}")
         ctx.flash(f"Bucket {name} created.")
         return redirect(f"/buckets/{name}")
+
+    # ------------------------------------------------------------------ guided creation
+    _BEFORE = (
+        "<p>You are about to create a <strong>bucket</strong>: a top-level folder that holds your files (objects). It takes about a minute.</p>"
+        '<ol class="howto"><li>Answer the questions below. Nothing is created until you press <em>Create bucket</em>.</li>'
+        "<li>The next page confirms what was created and lists what to do next, including how to give an application access.</li></ol>"
+        '<p class="muted">Not sure? Keep the suggested choices: old versions kept, incomplete uploads cleaned up. '
+        "You can change versioning, clean-up and access rules later on the bucket's page. A bucket's name cannot be changed.</p>")
+
+    def _new_form(ctx, v=None, error="", suggestion=""):
+        v = v or {}
+        plan = _plan(ctx)
+        regions = app.backend.endpoints(ctx.ref)["regions"]
+        purpose = v.get("purpose", "keep-versions")
+        lock_ok = bool(plan["allow_object_lock"])
+
+        def radio(val, checked, disabled=False):
+            t, h = _PURPOSE_HELP[val]
+            return (f'<label class="option"><input type="radio" name="purpose" value="{val}"{" checked" if checked else ""}{" disabled" if disabled else ""}> '
+                    f'<span><strong>{esc(t)}</strong><small class="muted">{esc(h)}</small></span></label>')
+        reg = (f'<div class="field"><label>Region<select name="region">' + "".join(
+            f'<option value="{esc(r)}"{" selected" if r == v.get("region") else ""}>{esc(r)}</option>' for r in regions) + "</select></label>"
+            "<small class='muted'>Where the data is stored. It cannot be changed later.</small></div>") if len(regions) > 1 else             f'<input type="hidden" name="region" value="{esc(regions[0])}"><p class="muted">Region: <strong>{esc(regions[0])}</strong> (the only one your service offers).</p>'
+        err = ""
+        if error:
+            err = f'<div class="flash bad" role="alert">{esc(error)}' + (
+                f' Try <strong>{esc(suggestion)}</strong>.' if suggestion else "") + "</div>"
+        lock_block = ""
+        if lock_ok:
+            lock_block = ('<details class="indent"><summary>Settings for locking (only used if you choose to lock)</summary><div class="field"><label>Keep each object for<input type="number" name="lock_amount" min="1" max="36500" '
+                          f'value="{esc(v.get("lock_amount", "365"))}"></label></div>'
+                          '<div class="field"><label>Unit<select name="lock_unit"><option value="days">days</option><option value="years">years (up to 100)</option></select></label></div>'
+                          '<div class="field"><label>Strictness<select name="lock_mode"><option value="GOVERNANCE">Standard: a user with special permission can still shorten it</option>'
+                          '<option value="COMPLIANCE">Strict: nobody, not even the provider, can shorten or remove it</option></select></label></div>'
+                          '<label class="check"><input type="checkbox" name="lock_ack" value="1"> I understand that strict retention cannot be shortened or removed</label></details>')
+        else:
+            lock_block = '<p class="muted indent">Locking is not part of your plan. Ask your provider if you need it.</p>'
+        html = (f'{err}<form method="post" action="/buckets/new" class="stack steps" autocomplete="off">'
+                f'<input type="hidden" name="_csrf" value="{esc(ctx.sess.csrf)}">'
+                '<fieldset class="step"><legend><span class="n">1</span> Name and place</legend>'
+                f'<div class="field"><label>Bucket name<input type="text" name="name" value="{esc(v.get("name", ""))}" required maxlength="63" placeholder="for example acme-backups-2026"></label>'
+                '<small class="muted">3 to 63 characters: lowercase letters, numbers, dots and hyphens. It must be unique across the whole service and cannot be changed later.</small></div>'
+                + reg + '</fieldset>'
+                '<fieldset class="step"><legend><span class="n">2</span> How should the data be protected?</legend>'
+                + radio("keep-versions", purpose == "keep-versions") + radio("latest-only", purpose == "latest-only")
+                + radio("locked", purpose == "locked", disabled=not lock_ok) + lock_block + '</fieldset>'
+                '<fieldset class="step"><legend><span class="n">3</span> Clean-up (optional)</legend>'
+                f'<label class="check"><input type="checkbox" name="c_uploads" value="1"{" checked" if v.get("c_uploads", "1") else ""}> '
+                'Remove incomplete uploads after 7 days <small class="muted">(saves space; recommended)</small></label>'
+                f'<div class="field"><label>Delete objects automatically after (days)<input type="number" name="c_expire" min="1" max="36500" value="{esc(v.get("c_expire", ""))}"></label>'
+                '<small class="muted">Leave empty to keep objects until you delete them. Not combined with locking.</small></div>'
+                f'<div class="field"><label>Delete old versions after (days)<input type="number" name="c_old" min="1" max="36500" value="{esc(v.get("c_old", ""))}"></label>'
+                '<small class="muted">Only for buckets that keep old versions. Leave empty to keep them.</small></div></fieldset>'
+                '<fieldset class="step"><legend><span class="n">4</span> Who can use it?</legend>'
+                '<p>Only you at first. A new bucket is <strong>private</strong>. In the next step you can create an access key for an application. '
+                'Public access and finer rules are on the bucket\'s <em>Manage access</em> page later.</p></fieldset>'
+                '<div class="actions"><button class="btn primary">Create bucket</button> <a class="btn" href="/buckets">Cancel</a></div></form>')
+        return Raw(html)
+
+    def _guided_page(ctx, v=None, error="", suggestion="", status=200):
+        plan = _plan(ctx)
+        n = len(app.backend.list_buckets(ctx.ref))
+        body = ui.card("Before you start", Raw(_BEFORE)) + ui.card(f"Create a bucket ({n} of {plan['max_buckets']} used)", _new_form(ctx, v, error, suggestion))
+        return html_response(ui.page(ctx, "Create a bucket", Raw(body), "/buckets", actions=ui.link("/buckets", "Back", "btn")), status)
+
+    @app.route("customer", "GET", "/buckets/new", perm="buckets.edit", module="buckets")
+    def new_form(ctx):
+        return _guided_page(ctx)
+
+    @app.route("customer", "POST", "/buckets/new", perm="buckets.edit", module="buckets")
+    def new_post(ctx):
+        plan = _plan(ctx)
+        v = {k: ctx.f(k) for k in ("name", "region", "purpose", "lock_amount", "lock_unit", "lock_mode", "c_expire", "c_old")}
+        v["c_uploads"] = ctx.f("c_uploads")
+        name = v["name"]
+        if v["purpose"] not in _PURPOSE_HELP:
+            v["purpose"] = "keep-versions"
+        purpose = v["purpose"]
+
+        def fail(msg, sug=""):
+            return _guided_page(ctx, v, msg, sug, 400)
+        prob, sug = name_problem(name)
+        if prob:
+            return fail(prob, sug)
+        if len(app.backend.list_buckets(ctx.ref)) >= plan["max_buckets"]:
+            return fail(f"Your plan allows {plan['max_buckets']} buckets. Delete an empty bucket or ask your provider for more.")
+        regions = app.backend.endpoints(ctx.ref)["regions"]
+        region = v["region"] if v["region"] in regions else regions[0]
+        lock = None
+        if purpose == "locked":
+            if not plan["allow_object_lock"]:
+                return fail("Locking is not part of your plan.")
+            lock = {"mode": v["lock_mode"] if v["lock_mode"] in ("GOVERNANCE", "COMPLIANCE") else "GOVERNANCE",
+                    "amount": int(v["lock_amount"]) if v["lock_amount"].isdigit() else 0, "unit": "years" if v["lock_unit"] == "years" else "days"}
+            bad = s3xml.lock_problems(lock)
+            if bad:
+                return fail(bad[0])
+            if lock["mode"] == "COMPLIANCE" and not ctx.f("lock_ack"):
+                return fail("Tick the box to confirm that strict retention cannot be shortened or removed.")
+        versioning = purpose in ("keep-versions", "locked")
+        rules = []
+        if v["c_uploads"]:
+            rules.append({"id": "cleanup-uploads", "prefix": "", "expire_days": 0, "noncurrent_days": 0, "abort_multipart_days": 7})
+        exp, old = _int(v["c_expire"], 36500), _int(v["c_old"], 36500)
+        if v["c_expire"].strip() and not exp or v["c_old"].strip() and not old:
+            return fail("Enter whole numbers of days, or leave the clean-up fields empty.")
+        if exp and lock:
+            return fail("Automatic deletion cannot be combined with locking. Leave the clean-up days empty.")
+        if exp:
+            rules.append({"id": "auto-expire", "prefix": "", "expire_days": exp, "noncurrent_days": 0, "abort_multipart_days": 0})
+        if old and versioning:
+            rules.append({"id": "old-versions", "prefix": "", "expire_days": 0, "noncurrent_days": old, "abort_multipart_days": 0})
+        elif old:
+            return fail("Old versions are only kept when you choose to keep versions. Clear that field, or choose to keep old versions.")
+        app.backend.create_bucket(ctx.ref, name, region, versioning, bool(lock))
+        try:
+            if lock:
+                app.backend.update_bucket(ctx.ref, name, lock_default=lock)
+            if rules:
+                app.backend.update_bucket(ctx.ref, name, lifecycle=rules)
+        except BackendError:
+            try:                                                # the bucket is empty: do not leave a half-set-up one behind
+                app.backend.delete_bucket(ctx.ref, name)
+            except BackendError:
+                pass
+            raise
+        ctx.audit("bucket.create", name, f"versioning={versioning} lock={lock['mode'] + ' ' + str(lock['amount']) + ' ' + lock['unit'] if lock else 'no'} "
+                                         f"cleanup={','.join(r['id'] for r in rules) or 'none'}")
+        return html_response(_created(ctx, name, region, purpose, lock, rules))
+
+    def _created(ctx, name, region, purpose, lock, rules):
+        ep = app.backend.endpoints(ctx.ref)
+        url = (ep["s3"] or ["https://s3.example.net"])[0]
+        prot = {"keep-versions": "Old versions are kept", "latest-only": "Only the latest version is kept", "locked": "Locked"}[purpose]
+        if lock:
+            prot += f": each object is kept {lock['amount']} {lock['unit']} ({'strict' if lock['mode'] == 'COMPLIANCE' else 'standard'})"
+        names = {"cleanup-uploads": "incomplete uploads removed after 7 days", "auto-expire": "objects deleted automatically",
+                 "old-versions": "old versions deleted automatically"}
+        clean = ", ".join(names[r["id"]] for r in rules) or "none"
+        done = ui.card(f"Bucket {name} is ready", ui.kv([("Name", Raw(f"<code>{esc(name)}</code>")), ("Region", region), ("Protection", prot),
+                                                        ("Clean-up", clean), ("Who can use it", "Only you, for now (private)")]))
+        key_btn = ui.link(f"/keys/new?bucket={name}", "Create an access key for this bucket", "btn primary") if ctx.can("access.edit") else ""
+        todo = ui.card("What to do now", Raw(
+            '<ol class="howto">'
+            "<li><strong>Give an application access.</strong> Create an access key limited to this bucket. It takes a minute and the portal explains each step. "
+            + (f"<br>{key_btn}" if key_btn else "Ask an administrator of your account to create one.") + "</li>"
+            f"<li><strong>Test it.</strong> After you have a key, upload a small file with the AWS command line: <code>aws s3 cp hello.txt s3://{esc(name)}/ --endpoint-url {esc(url)}</code></li>"
+            "<li><strong>Check the protection.</strong> Open the bucket to review versioning, clean-up rules and who has access.</li>"
+            "<li><strong>Optional:</strong> let a website read it, or limit access to one folder, on the bucket's <em>Manage access</em> page.</li></ol>"
+            f'<p>{ui.link(f"/buckets/{name}", "Open the bucket", "btn")} {ui.link("/buckets/new", "Create another bucket", "btn")}</p>'))
+        trouble = ui.card("Good to know", ui.table(["Question", "Answer"], [
+            ["Can I rename the bucket?", "No. Create a new bucket and copy the data across."],
+            ["Can I change the protection later?", "Versioning and clean-up rules: yes, on the bucket's page. Locking can only be chosen when the bucket is created."],
+            ["Is my data visible to anyone else?", "No. The bucket is private until you change its access rules."],
+            ["How do I delete the bucket?", "Empty it first, then use Delete bucket on its page."]]))
+        return ui.page(ctx, "Bucket created", Raw(done + todo + trouble), "/buckets")
 
     # ------------------------------------------------------------------ detail
     @app.route("customer", "GET", "/buckets/{name}", perm="buckets.view", module="buckets")
@@ -189,9 +383,6 @@ def register(app):
         ctx.audit("bucket.public" if want else "bucket.private", name)
         ctx.flash("Bucket is now public." if want else "Bucket is now private.")
         return _back(name, "/access")
-
-    def _int(v: str, hi: int) -> int:
-        return min(max(int(v), 1), hi) if v.strip().isdigit() else 0
 
     @app.route("customer", "POST", "/buckets/{name}/lifecycle", perm="buckets.edit", module="buckets")
     def lifecycle_add(ctx):

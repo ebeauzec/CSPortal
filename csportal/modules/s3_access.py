@@ -177,7 +177,9 @@ def register(app):
             return html_response(ui.page(ctx, "Create an access key", Raw(ui.card("An administrator is needed", Raw(
                 "<p>A new key comes with its own permissions, and only an administrator of your account can set those. "
                 "You can add a replacement key to an existing one on the <a href='/keys'>Access keys</a> page.</p>"))), "/keys"), 403)
-        return ui.page(ctx, "Create an access key", Raw(ui.card("Before you start", Raw(_BEFORE)) + ui.card("Four quick questions", _form(ctx))), "/keys",
+        pre = ctx.q("bucket")
+        vals = {"scope": "selected", "buckets": [pre], "access": "read-write"} if pre in _bucket_names(ctx) else None
+        return ui.page(ctx, "Create an access key", Raw(ui.card("Before you start", Raw(_BEFORE)) + ui.card("Four quick questions", _form(ctx, vals))), "/keys",
                        actions=ui.link("/keys", "Back", "btn"))
 
     @app.route("customer", "POST", "/keys/new", perm="access.edit", module="s3-access")

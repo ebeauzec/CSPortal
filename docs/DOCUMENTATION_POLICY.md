@@ -29,6 +29,7 @@ whoever works on the code, in the same commit as the change it describes.
 | [README.md](../README.md) | What CSPortal is, status, how to read the docs |
 | [USE_CASES.md](USE_CASES.md) | The journeys offered to customers |
 | [TENANT_PARITY.md](TENANT_PARITY.md) | Tenant capabilities, module and release for each |
+| [BUCKETS_GUIDE.md](BUCKETS_GUIDE.md) | The customer-facing steps for creating a bucket; changes with the `buckets` creation pages, whose on-screen text it mirrors |
 | [ACCESS_KEYS_GUIDE.md](ACCESS_KEYS_GUIDE.md) | The customer-facing steps for access keys; changes with the `s3-access` pages, whose on-screen text it mirrors |
 | [CUSTOMER_CONTROLS.md](CUSTOMER_CONTROLS.md) | What customer users can do, by role, with checks and audit actions; changes with the customer modules |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Principles, components, flows, deployment |

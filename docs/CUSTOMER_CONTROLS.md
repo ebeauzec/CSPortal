@@ -144,7 +144,7 @@ Permission to change: `buckets.edit` (administrator, operator). Deleting a bucke
 
 | Setting | Behaviour |
 |---|---|
-| Create | Name check, region from the CSP's endpoints, versioning on by default, Object Lock only if the plan allows it, limited by the plan's bucket count |
+| Create (guided) | One page, four questions: name and region; protection (keep old versions, latest only, or lock with a retention time and standard or strict mode; locking only if the plan allows); optional clean-up (incomplete uploads after 7 days, automatic expiry, old-version expiry); who can use it (private). Names are checked in plain words with a suggested fix; the plan's bucket limit is checked; if the grid refuses part of the set-up the empty bucket is removed again. The result page lists next steps, including creating an access key for the bucket. Steps for customers: [BUCKETS_GUIDE.md](BUCKETS_GUIDE.md) |
 | Versioning | Turn on, suspend. Cannot be suspended on a bucket with Object Lock |
 | Lifecycle | Rules: expire objects, delete old versions, clean incomplete uploads, with an optional prefix. Rules the portal cannot describe (tags, transitions) are shown as "custom rule" and **kept unchanged** when you change another rule |
 | Object Lock default retention | Governance or compliance, for 1 to 36500 days or 1 to 100 years. Compliance needs a tick that it cannot be shortened or removed. Applies to objects written afterwards. Only on buckets created with Object Lock |
@@ -153,7 +153,7 @@ Permission to change: `buckets.edit` (administrator, operator). Deleting a bucke
 
 If a setting cannot be read from the grid, the bucket page says which one instead of showing an empty value.
 
-Audit actions: `bucket.create`, `bucket.versioning`, `bucket.lifecycle_add`, `bucket.lifecycle_remove`,
+Audit actions: `bucket.create` (with protection and clean-up), `bucket.versioning`, `bucket.lifecycle_add`, `bucket.lifecycle_remove`,
 `bucket.lock_default`, `bucket.lock_default_clear`, `bucket.cors_add`, `bucket.cors_remove`, `bucket.delete`.
 
 ## Not built

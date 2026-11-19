@@ -609,6 +609,78 @@ class PortalControls(unittest.TestCase):
         st, _ = op.post_form("/keys", "/keys/new", {"name": "sneaky", "access": "read-write", "scope": "all", "expiry": "90"})
         self.assertEqual(st, 403)
 
+    # ------------------------------------------------------------ guided bucket creation
+    def test_name_problems_are_explained_with_a_suggestion(self):
+        from csportal.modules.buckets import name_problem
+        self.assertEqual(name_problem("good-name.1"), ("", ""))
+        self.assertIn("lowercase", name_problem("My Bucket")[0])
+        self.assertEqual(name_problem("My Bucket_1")[1], "my-bucket-1")
+        self.assertIn("at least 3", name_problem("ab")[0])
+        self.assertIn("63", name_problem("a" * 64)[0])
+        self.assertIn("start and end", name_problem("-abc-")[0])
+        self.assertIn("IP address", name_problem("203.0.113.9")[0])
+
+    def test_guided_bucket_with_cleanup_and_the_follow_up_steps(self):
+        c = self.login()
+        ref = self.ref("riverbend")
+        st, page = c.get("/buckets/new")
+        self.assertEqual(st, 200)
+        for text in ("Before you start", "Name and place", "How should the data be protected?", "Clean-up (optional)", "Who can use it?"):
+            self.assertIn(text, page)
+        st, page = c.post_form("/buckets/new", "/buckets/new", {"name": "guided-one", "region": "us-east-1", "purpose": "keep-versions",
+                                                               "c_uploads": "1", "c_old": "30"})
+        self.assertEqual(st, 200)
+        for text in ("Bucket guided-one is ready", "What to do now", "/keys/new?bucket=guided-one", "aws s3 cp"):
+            self.assertIn(text, page)
+        b = self.app.backend.get_bucket(ref, "guided-one")
+        self.assertEqual(b["versioning"], "enabled")
+        self.assertEqual({r["id"] for r in b["lifecycle"]}, {"cleanup-uploads", "old-versions"})
+        self.assertTrue(self.app.db.one("SELECT 1 FROM audit WHERE action='bucket.create' AND target='guided-one'"))
+        # the key page opens with that bucket already ticked
+        st, page = c.get("/keys/new?bucket=guided-one")
+        self.assertRegex(page, r'name="b_guided-one" value="1" checked')
+        self.app.backend.delete_bucket(ref, "guided-one")
+
+    def test_guided_bucket_refuses_with_plain_words_and_keeps_the_answers(self):
+        c = self.login()
+        ref = self.ref("riverbend")
+        n = len(self.app.backend.list_buckets(ref))
+        st, page = c.post_form("/buckets/new", "/buckets/new", {"name": "Bad Name_1", "purpose": "keep-versions"})
+        self.assertEqual(st, 400)
+        self.assertIn("lowercase", page)
+        self.assertIn("bad-name-1", page)                         # the suggestion
+        st, page = c.post_form("/buckets/new", "/buckets/new", {"name": "ok-name-two", "purpose": "latest-only", "c_old": "10"})
+        self.assertEqual(st, 400)
+        self.assertIn("Old versions are only kept", page)
+        st, page = c.post_form("/buckets/new", "/buckets/new", {"name": "ok-name-two", "purpose": "keep-versions", "c_expire": "abc"})
+        self.assertEqual(st, 400)
+        self.assertIn('value="ok-name-two"', page)
+        st, page = c.post_form("/buckets/new", "/buckets/new", {"name": "riverbend-curated", "purpose": "keep-versions"})   # already taken
+        self.assertEqual(len(self.app.backend.list_buckets(ref)), n)
+
+    def test_guided_locked_bucket_needs_the_acknowledgement_and_sets_default_retention(self):
+        c = self.login()
+        ref = self.ref("riverbend")
+        base = {"name": "locked-records", "purpose": "locked", "lock_amount": "2", "lock_unit": "years", "lock_mode": "COMPLIANCE"}
+        st, page = c.post_form("/buckets/new", "/buckets/new", base)
+        self.assertEqual(st, 400)
+        self.assertIn("cannot be shortened", page)
+        self.assertFalse([b for b in self.app.backend.list_buckets(ref) if b["name"] == "locked-records"])
+        st, page = c.post_form("/buckets/new", "/buckets/new", {**base, "lock_ack": "1", "c_expire": "30"})
+        self.assertEqual(st, 400)
+        self.assertIn("cannot be combined", page)
+        st, page = c.post_form("/buckets/new", "/buckets/new", {**base, "lock_ack": "1"})
+        self.assertEqual(st, 200)
+        b = self.app.backend.get_bucket(ref, "locked-records")
+        self.assertTrue(b["object_lock"])
+        self.assertEqual((b["lock_default"]["mode"], b["lock_default"]["amount"], b["lock_default"]["unit"]), ("COMPLIANCE", 2, "years"))
+
+    def test_guided_bucket_is_for_people_who_may_edit_buckets(self):
+        ro = self.login("lee@riverbend.example")
+        self.assertEqual(ro.get("/buckets/new")[0], 403)
+        st, _ = ro.post_form("/buckets", "/buckets/new", {"name": "sneaky-bucket", "purpose": "latest-only"})
+        self.assertEqual(st, 403)
+
 
 if __name__ == "__main__":
     unittest.main()

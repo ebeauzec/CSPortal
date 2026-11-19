@@ -4,6 +4,15 @@ Neutral release notes. Each entry says what changed and what is **not verified**
 
 ## Unreleased
 
+**Changed (bucket creation; see `docs/BUCKETS_GUIDE.md`)**
+- **Guided bucket creation**: four plain questions on one page (name and region; protection; clean-up; who can use it).
+  Name problems are explained with a suggested fix. Protection choices: keep old versions, latest only, or lock with a
+  retention time (standard or strict, strict needs a confirmation). Optional clean-up rules are created with the bucket.
+  If the grid refuses part of the set-up the empty bucket is removed again.
+- Result page with what was created, next steps (including an access key limited to the new bucket, opened with the bucket
+  already ticked), and short answers to common questions. The Buckets page explains the process in four steps.
+- Customer guide `docs/BUCKETS_GUIDE.md`. Not verified on a real grid.
+
 **Changed (access keys; see `docs/ACCESS_KEYS_GUIDE.md`)**
 - **Guided key creation** for customer administrators: four plain questions, one button; the portal creates the storage
   user, its own group and the key, and rolls back if the grid refuses a step.
