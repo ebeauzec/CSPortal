@@ -11,6 +11,9 @@ Neutral release notes. Each entry says what changed and what is **not verified**
 - CI job `dependency-scan`: `pip-audit` on `requirements.txt` (fails the build on a known vulnerability), a
   CycloneDX software bill of materials published as a build artifact, and a weekly scheduled run.
 - Dependabot configuration for Python packages, the base image and workflow actions.
+- CI job `image-scan`: builds the production image and scans it (operating-system and Python packages) with
+  Trivy 0.76.2, run as a container pinned by digest. A HIGH or CRITICAL finding with a fix available fails the
+  build; the JSON report is kept as a build artifact. The same job proves the Dockerfile builds.
 
 **Changed**
 - ADR-007 accepted: compliance scope is ISO/IEC 27001 and SOC 2 (owner decision, 2026-11-19).
@@ -22,6 +25,8 @@ Neutral release notes. Each entry says what changed and what is **not verified**
   major versions for the base image (a Python 3.15 proposal was declined: not tested on 3.15).
 
 **Not verified**
+- The image scan has not been seen to run yet (Docker is not available on the development machine). It does not
+  cover the host or the grid, and findings with no fix available yet do not fail it.
 - The product has not been run on Python 3.15. The supported version stays 3.12.
 - The dependency scan found no known vulnerabilities, locally and in its first GitHub Actions run (2026-11-19).
   It covers Python packages only, not the base image or host.

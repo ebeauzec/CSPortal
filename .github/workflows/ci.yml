@@ -44,3 +44,29 @@ jobs:
           name: sbom
           path: sbom.cdx.json
           retention-days: 90
+
+  image-scan:
+    # Builds the production image (this also proves the Dockerfile builds) and scans it, operating-system
+    # packages included. A vulnerability rated HIGH or CRITICAL that has a fix available fails the build;
+    # ones with no fix yet are listed in the report but do not fail it.
+    runs-on: ubuntu-latest
+    env:
+      # Scanner container, pinned by digest (not by a movable tag). Update with the version in docs/SECURITY.md.
+      TRIVY: ghcr.io/aquasecurity/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb  # 0.76.2
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the image
+        run: |
+          docker build -t csportal:ci .
+          docker save csportal:ci -o image.tar
+      - name: Scan the image (report, then gate)
+        run: |
+          run_trivy() { docker run --rm --user "$(id -u):$(id -g)" -e TRIVY_CACHE_DIR=/tmp/trivy-cache -v "$PWD:/work" -w /work "$TRIVY" "$@"; }
+          run_trivy image --input image.tar --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --format json --output image-scan.json --exit-code 0
+          run_trivy image --input image.tar --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: image-scan-report
+          path: image-scan.json
+          retention-days: 90

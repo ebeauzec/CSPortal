@@ -20,7 +20,7 @@ Criteria 2017, with the 2022 points of focus)**. See ADR-007 in [../DECISIONS.md
 ## Honest gaps that matter most
 
 1. **The StorageGRID connector is not verified on a real grid** (affects availability and integrity evidence).
-2. **No independent penetration test.** (Python dependencies are now scanned in CI; the base image and host are not.)
+2. **No independent penetration test.** (Python dependencies and the built image are scanned in CI; the host is not.)
 3. **Audit retention is not enforced.** `security.audit_retention_days` is a configuration value only; no
    purge or archive job exists. The audit log grows until the CSP archives the database. A purge must keep
    the hash chain verifiable, so it needs a signed checkpoint design first.
@@ -78,7 +78,7 @@ master key apart from the data (docs/DEPLOYMENT.md).
 | 8.5 Secure authentication | MFA (TOTP), lock-out, rate limits, equal timing, short sessions, `__Host-` cookies over TLS | auth.py, web/core.py | Provided | WebAuthn planned |
 | 8.6 Capacity management | Quota meter, alerts, grid capacity overview, system health page | modules/capacity_alerts.py | Partial | Capacity planning of hosts and grid |
 | 8.7 Protection against malware | Not a product function. No file uploads are accepted | | CSP | Host protection |
-| 8.8 Technical vulnerabilities | Python dependencies pinned and scanned for known vulnerabilities on every push, pull request and weekly (build fails on a finding); Dependabot updates. **Base image, host and the grid are not scanned; no penetration test.** The scan ran clean locally and in GitHub Actions on 2026-11-19 | requirements.txt, .github/workflows/ci.yml | Partial | Patch the base image and host; scan the image |
+| 8.8 Technical vulnerabilities | Python dependencies pinned and scanned for known vulnerabilities on every push, pull request and weekly (build fails on a finding); Dependabot updates. The built image (operating-system and Python packages) is also scanned in CI; fixable HIGH and CRITICAL findings fail the build. **The host, the grid and unfixed findings are not covered; no penetration test.** The Python scan ran clean locally and in GitHub Actions on 2026-11-19; the image scan has not yet been seen to run | requirements.txt, .github/workflows/ci.yml | Partial | Patch the base image and host; scan the image |
 | 8.9 Configuration management | Single reviewed configuration file; production mode refuses unsafe settings; scrubbed copy in diagnostic bundle | config.py | Provided | Keep config under change control |
 | 8.10 Information deletion | Customer close action; deletion of the grid account is a separate provider step. Personal-data deletion is planned | modules/tenant_onboarding.py | Partial | Deletion schedule |
 | 8.11 / 8.12 Masking and leakage prevention | Secrets never logged; S3 secret not stored; mail copy loses its link after delivery; no object data passes through | logs.py, services.py | Provided | |
@@ -119,7 +119,7 @@ are not mapped yet; confirm with your auditor which categories your report will 
 | **CC6.6** Boundary protection | Private admin listener; strict TLS; no inbound except the two surfaces | Provided | Firewalls and WAF |
 | **CC6.7** Restricting transmission, movement, removal | TLS; no bulk data path through the portal; exports are logged | Provided | |
 | **CC6.8** Preventing and detecting malicious software | Not applicable to the product | CSP | Host controls |
-| **CC7.1** Detect configuration changes and vulnerabilities | Dependency scan in CI (Python packages); reconcile and conformance checks are planned/partial | Partial | Scan the image, host and grid |
+| **CC7.1** Detect configuration changes and vulnerabilities | Dependency and image scans in CI; reconcile and conformance checks are planned/partial | Partial | Scan the host and grid |
 | **CC7.2** Monitoring for anomalies | Security log events; log forwarding | Partial | Central monitoring and alerting |
 | **CC7.3 / 7.4 / 7.5** Evaluate, respond to, recover from incidents | Diagnostic bundle, request ids, audit trail, backup and restore | Partial | Incident response plan and testing |
 | **CC8.1** Change management | Version control, tests, changelog, forward-only migrations | Partial | Approval and deployment process |
@@ -147,7 +147,7 @@ are not mapped yet; confirm with your auditor which categories your report will 
 
 | Gap | Planned work | Controls it helps |
 |---|---|---|
-| Container image scanning | Scan the built image (operating-system packages) in CI. Python dependency scan and bill of materials are done | ISO 8.8; SOC 2 CC7.1 |
+| Host and grid scanning | Not a product function: the CSP scans the host and the StorageGRID nodes. Python dependency scan, image scan and bill of materials are done in CI | ISO 8.8; SOC 2 CC7.1 |
 | Audit retention | Retention job with signed chain checkpoints | ISO 5.33; SOC 2 CC4, C1.2 |
 | Four-eyes and re-authentication | Approval workflow for delete, suspend all, key rotation | ISO 5.3, 8.2; SOC 2 CC6.3 |
 | Key rotation | Master-key and grid-credential rotation commands | ISO 8.24 |

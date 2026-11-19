@@ -80,7 +80,14 @@ reasoning behind it. Both are updated whenever the design changes.
   pull request and weekly; a known vulnerability fails the build. The same job publishes a CycloneDX software
   bill of materials as a build artifact. Dependabot proposes updates to Python packages, the base image and the
   workflow actions. It does not propose a new Python minor or major version: that is a deliberate decision,
-  made with tests on the new version, and it changes the Dockerfile, CI and docs together. The scan covers Python packages only: it does not scan the base image's operating-system
+  made with tests on the new version, and it changes the Dockerfile, CI and docs together.
+- CI job `image-scan` builds the production image (so the Dockerfile is tested on every change) and scans it with
+  Trivy for known vulnerabilities in operating-system and Python packages, on every push, pull request and
+  weekly. A HIGH or CRITICAL finding that has a fix available fails the build; findings with no fix yet are
+  kept in the JSON report (build artifact) but do not fail it. The scanner runs as a container pinned by
+  digest, not through a third-party action, and reads the image from a saved file, so it gets no access to the
+  build host's Docker. Its vulnerability database is downloaded when the job runs. To update the scanner,
+  change the digest in `.github/workflows/ci.yml` after checking the release. The scan covers Python packages only: it does not scan the base image's operating-system
   packages or the host (the CSP does, see [DEPLOYMENT.md](DEPLOYMENT.md)).
 
 ## Implementation status (version 0.1.0)
