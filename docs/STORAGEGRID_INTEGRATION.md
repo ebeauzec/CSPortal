@@ -65,8 +65,9 @@ Customers use the S3 endpoints directly for data. The portal is control plane on
 
 The connector is `csportal/backends/storagegrid.py`; the interface is `csportal/backends/base.py`.
 
-- **Status: written, not yet verified on a real grid.** Calls follow the public documentation as understood
-  at the time. Treat this as unproven until the steps below pass on your release.
+- **Status: written, compared with NetApp's published documentation, not yet verified on a real grid.** The
+  comparison, the differences it found and what is still unconfirmed are in [API_VERIFICATION.md](API_VERIFICATION.md).
+  Treat the connector as unproven until the steps below pass on your release.
 - `CALLS` in the connector lists every management API call it makes. `python -m csportal conformance` (or
   System health, API conformance) fetches the OpenAPI description the grid itself publishes and reports each
   call as `ok` or `MISSING`. This is the authority on what exists on your release.
@@ -82,6 +83,8 @@ The connector is `csportal/backends/storagegrid.py`; the interface is `csportal/
 - **Bucket page reads** (one S3 call each): versioning, lifecycle, policy, CORS and, on locked buckets, Object Lock.
   A setting that cannot be read is reported on the page; it is never shown as empty. The bucket list does not make
   these calls (it shows "-" for versioning and access) so that a long list stays fast.
+- **Lifecycle** supports expiration and old-version expiration only: StorageGRID does not support transitions or
+  `AbortIncompleteMultipartUpload`, so the portal never writes them.
 - **Lifecycle rules the portal cannot describe** (tags, transitions, date expiry) are kept as the original XML and
   written back unchanged when another rule changes.
 - **Group policies** are written as S3 statements on the group (`/org/groups/{id}`, `PUT` to change). A group limited
@@ -104,8 +107,8 @@ The connector is `csportal/backends/storagegrid.py`; the interface is `csportal/
   the tenant **root** password itself and stores `root` and that password encrypted. Management calls for that tenant
   (groups, users, access keys) use these credentials. The portal then creates a service group and user only to own the
   S3 access key used for bucket settings; that key is stored beside the root credentials, which are kept. This is a
-  deviation from least privilege: the portal holds a root credential per tenant. The closing step is to find, on the
-  supported releases, a documented way to give a local tenant user a password at creation, switch the management sign-in to that
+  deviation from least privilege: the portal holds a root credential per tenant. The closing step is to give a local tenant
+  user a password at creation (NetApp's own tooling uses `POST /org/users/{uniqueName}/change-password`; see [API_VERIFICATION.md](API_VERIFICATION.md)), switch the management sign-in to that
   user, and keep root only in the runbook. Until then: encrypt (done), restrict who can read the database and the
   master key, and rotate root with [runbooks/ROTATE_GRID_CREDENTIALS.md](runbooks/ROTATE_GRID_CREDENTIALS.md).
 

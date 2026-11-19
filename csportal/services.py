@@ -290,5 +290,5 @@ def bucket_posture(b: dict) -> list[tuple[str, bool, str]]:
          "Turn versioning on so deleted or overwritten objects can be recovered."),
         ("Object Lock", bool(b["object_lock"]), "Object Lock can only be chosen when a bucket is created. Use it for data that must not change."),
         ("Private", not b["public"], "This bucket allows public reads. Make sure that is intended."),
-        ("Lifecycle rules", bool(b["lifecycle"]), "Add a rule to expire old versions and incomplete uploads and keep costs down."),
+        ("Lifecycle rules", bool(b["lifecycle"]), "Add a rule to expire old objects and old versions and keep costs down."),
     ]

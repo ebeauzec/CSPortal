@@ -4,6 +4,17 @@ Neutral release notes. Each entry says what changed and what is **not verified**
 
 ## Unreleased
 
+**Fixed (StorageGRID connector, after a check against NetApp's published documentation; see `docs/API_VERIFICATION.md`)**
+- New tenants are created with the `management` capability. Without it the tenant sign-in the portal uses would very
+  probably have been refused.
+- No quota is sent as `null`, not `0`. The grid sign-in no longer sends an account id.
+- Access keys are listed and deleted by the grid's own key id and shown with the grid's masked label.
+- A user change is a full `PUT`; group and tenant changes send only writable fields; the bucket list asks for the region and
+  reads Object Lock correctly; long lists are read page by page; a key answer without a secret is removed.
+- **Removed the "clean incomplete uploads" rule** (on by default for new buckets, and in the lifecycle form).
+  StorageGRID does not support `AbortIncompleteMultipartUpload`, so the grid would very probably have refused it.
+- Paper check only. The connector is still not run against a real grid.
+
 **Changed (people and invitations; see `docs/PEOPLE_GUIDE.md`)**
 - **Guided invitation** for customer administrators: three plain questions (who, what role, what happens next), the safe
   role preselected, problems explained in words with the answers kept. The result page says whether the e-mail was sent,

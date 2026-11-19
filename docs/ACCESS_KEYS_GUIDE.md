@@ -10,7 +10,7 @@ same way a person uses a user name and a password.
 
 | Part | What it is | Secret? |
 |---|---|---|
-| **Access key ID** | Starts with letters and numbers, for example `AKE1CD962EEE594818CD`. Says *which* key this is | No. It is shown in the list |
+| **Access key ID** | Starts with letters and numbers, for example `AKE1CD962EEE594818CD`. Says *which* key this is | No. It is shown on the page when the key is created. The list may show only the last four characters, as StorageGRID does |
 | **Secret access key** | A long random text. Proves the key is yours | **Yes.** Shown **once**, when you create the key. The portal does not keep it |
 
 Each key has its own permissions. Give every application its own key, so you can change or remove one without
@@ -57,7 +57,7 @@ The page also shows everything the application needs. Almost every tool asks for
 |---|---|
 | Endpoint (service URL) | Shown on the page, for example `https://s3.example.net` |
 | Region | Shown on the page, for example `us-east-1` |
-| Access key ID | Shown on the page and in the list of keys |
+| Access key ID | Shown on the page after creation (the list may show only its last four characters) |
 | Secret access key | Shown once, on the page after creation |
 
 9. Open the storage settings of your application. Look for "S3", "object storage", "S3-compatible" or "custom endpoint".

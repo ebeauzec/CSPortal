@@ -155,6 +155,7 @@ class FakeS3Grid:
         kf.write_text(key_pem)
         self.settings: dict[tuple, bytes] = {}
         self.groups: list[dict] = []
+        self.page_sizes: list[int] = []
         self.bad_signatures = 0
         self.bad_md5 = 0
         outer = self
@@ -214,13 +215,20 @@ class FakeS3Grid:
                 if "/grid/accounts/" in p:
                     return self._json(200, {"policy": {"quotaObjectBytes": 0}})
                 if p.endswith("/org/groups") and method == "GET":
-                    return self._json(200, outer.groups)
+                    q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                    gs = outer.groups
+                    if q.get("marker"):                                              # the next page starts after the marker
+                        ids = [g["id"] for g in gs]
+                        gs = gs[ids.index(q["marker"][0]) + 1:] if q["marker"][0] in ids else []
+                    outer.page_sizes.append(int(q.get("limit", ["25"])[0]))
+                    return self._json(200, gs[:int(q.get("limit", ["25"])[0])])
                 if p.endswith("/org/groups") and method == "POST":
                     doc["id"] = f"g{len(outer.groups) + 1}"
                     outer.groups.append(doc)
                     return self._json(201, doc)
                 if "/org/groups/" in p and method == "PUT":
                     gid = p.rsplit("/", 1)[1]
+                    doc["id"] = gid                                                  # the id belongs to the group; a change does not carry it
                     outer.groups[:] = [doc if g["id"] == gid else g for g in outer.groups]
                     return self._json(200, doc)
                 self._json(404, {})
@@ -315,6 +323,115 @@ class ConnectorSettings(unittest.TestCase):
         be.update_group(ref, "team", access="read-only")
         t = {x["name"]: x for x in be.list_groups(ref)}["team"]
         self.assertEqual((t["access"], t["buckets"]), ("read-only", ["bkt"]))
+
+
+class ConnectorRequestShapes(unittest.TestCase):
+    """What the connector sends, checked against NetApp's published StorageGRID documentation and its Ansible collection
+    (see docs/API_VERIFICATION.md). The calls are recorded; no grid is involved."""
+
+    def backend(self, answers=None):
+        conn = S.GridConn(nodes=[S.AdminNode("fake", "127.0.0.1", 9)], api_version="v4", account_id="0", username="portal", timeout=1)
+        be = StorageGridBackend(conn, lambda: "grid-pw", lambda ref: {"username": "root", "password": "tenant-pw"}, lambda ref, c: None)
+        be.calls = []
+
+        def api(scope, method, path, body=None, params=None):
+            be.calls.append((scope, method, path, body, params))
+            for (m, suffix), ans in (answers or {}).items():
+                if m == method and path.endswith(suffix):
+                    return ans(body) if callable(ans) else ans
+            return {"id": "new-id"} if method == "POST" else []
+        be._api = api
+        return be
+
+    def test_grid_sign_in_names_no_account_and_tenant_sign_in_does(self):
+        sent = []
+        conn = S.GridConn(nodes=[S.AdminNode("fake", "127.0.0.1", 9)], api_version="v4", account_id="0", username="portal", timeout=1)
+        be = StorageGridBackend(conn, lambda: "grid-pw", lambda ref: {"username": "root", "password": "tenant-pw"})
+        be._mgmt = lambda method, path, headers, body=None: (sent.append((path, json.loads(body))), (200, b'{"data": "token"}'))[1]
+        be._token("grid")
+        be._token("12345678901234567890")
+        (gp, grid_body), (tp, tenant_body) = sent
+        self.assertEqual(gp, "/api/v4/authorize")
+        self.assertNotIn("accountId", grid_body)                                   # NetApp: the grid sign-in takes a user name and password
+        self.assertEqual((tenant_body["accountId"], tenant_body["username"]), ("12345678901234567890", "root"))
+        self.assertEqual((grid_body["cookie"], grid_body["csrfToken"]), (False, False))
+
+    def test_new_tenant_can_use_the_tenant_management_api_and_has_no_zero_quota(self):
+        be = self.backend()
+        be.create_tenant("Acme", 0, {})
+        scope, method, path, body, _ = be.calls[0]
+        self.assertEqual((scope, method, path), ("grid", "POST", "/grid/accounts"))
+        self.assertEqual(sorted(body["capabilities"]), ["management", "s3"])         # without "management" the tenant root user cannot sign in to /org
+        self.assertIsNone(body["policy"]["quotaObjectBytes"])                        # null is "no quota"
+        be2 = self.backend()
+        be2.create_tenant("Acme", 5 * 1024 ** 3, {})
+        self.assertEqual(be2.calls[0][3]["policy"]["quotaObjectBytes"], 5 * 1024 ** 3)
+
+    def test_changing_a_tenant_sends_only_writable_fields(self):
+        be = self.backend({("GET", "/grid/accounts/9"): {"id": "9", "name": "Acme", "capabilities": ["s3", "management"],
+                                                         "policy": {"quotaObjectBytes": 10}, "extra": "read-only"}})
+        be.update_tenant("9", quota_bytes=0)
+        put = [c for c in be.calls if c[1] == "PUT"][0]
+        self.assertEqual(set(put[3]), {"name", "capabilities", "policy"})
+        self.assertIsNone(put[3]["policy"]["quotaObjectBytes"])
+
+    def test_keys_are_listed_by_the_grids_own_id_with_the_masked_label(self):
+        be = self.backend({("GET", "/org/users"): [{"id": "u1", "uniqueName": "user/app", "memberOf": []}],
+                           ("GET", "/org/users/u1/s3-access-keys"): [{"id": "opaque-id==", "displayName": "****************AB12", "expires": None}]})
+        k = be.list_keys("t", "app")[0]
+        self.assertEqual((k["id"], k["label"]), ("opaque-id==", "****************AB12"))
+        be.delete_key("t", "app", k["id"])
+        self.assertEqual(be.calls[-1][1:3], ("DELETE", "/org/users/u1/s3-access-keys/opaque-id=="))
+
+    def test_a_key_response_without_a_secret_is_removed_not_kept(self):
+        users = {("GET", "/org/users"): [{"id": "u1", "uniqueName": "user/app", "memberOf": []}]}
+        ok = self.backend({**users, ("POST", "/s3-access-keys"): {"id": "k1", "accessKey": "AKIA1", "secretAccessKey": "sec"}})
+        self.assertEqual(ok.create_key("t", "app", None), {"id": "AKIA1", "secret": "sec"})
+        bad = self.backend({**users, ("POST", "/s3-access-keys"): {"id": "k1", "displayName": "****AB12"}})
+        with self.assertRaises(BackendError):
+            bad.create_key("t", "app", None)
+        self.assertEqual(bad.calls[-1][1:3], ("DELETE", "/org/users/u1/s3-access-keys/k1"))
+
+    def test_a_user_change_is_a_full_put_that_keeps_what_it_does_not_change(self):
+        be = self.backend({("GET", "/org/users"): [{"id": "u1", "uniqueName": "user/app", "fullName": "App", "memberOf": ["g1"], "disable": False}]})
+        be.update_user("t", "app", disabled=True)
+        method, path, body = be.calls[-1][1:4]
+        self.assertEqual((method, path), ("PUT", "/org/users/u1"))
+        self.assertEqual(body, {"fullName": "App", "uniqueName": "user/app", "memberOf": ["g1"], "disable": True})
+
+    def test_bucket_list_asks_for_the_region_and_reads_object_lock_correctly(self):
+        be = self.backend({("GET", "/usage"): {"dataBytes": 0, "objectCount": 0, "buckets": []},
+                           ("GET", "/grid/accounts/t"): {"policy": {}},
+                           ("GET", "/org/containers"): [{"name": "plain", "region": "eu-1", "s3ObjectLock": {"enabled": False}},
+                                                        {"name": "locked", "region": "eu-1", "s3ObjectLock": {"enabled": True}}]})
+        bs = {b["name"]: b for b in be.list_buckets("t")}
+        self.assertFalse(bs["plain"]["object_lock"])                                # {"enabled": false} must not read as locked
+        self.assertTrue(bs["locked"]["object_lock"])
+        listing = [c for c in be.calls if c[2] == "/org/containers"][0]
+        self.assertEqual(listing[4]["include"], "compliance,region")
+
+    def test_long_lists_are_read_in_pages_and_a_repeating_page_ends_the_loop(self):
+        grid = FakeS3Grid()
+        try:
+            grid.groups = [{"id": f"g{i:03d}", "displayName": f"grp{i}", "uniqueName": f"group/grp{i}", "policies": {}} for i in range(250)]
+            names = {g["name"] for g in grid.backend().list_groups(ACCT)}
+            self.assertEqual(len(names), 250)                                       # more than one page
+            self.assertTrue(len(grid.page_sizes) >= 3 and set(grid.page_sizes) == {100})
+        finally:
+            grid.close()
+        be = self.backend()
+        page = [{"id": str(i)} for i in range(100)]
+        be._api = lambda *a, **k: page                                                # a grid that ignores the marker
+        self.assertEqual(len(be._list("t", "/org/users")), 100)                       # the repeated page adds nothing, so it stops
+
+    def test_lifecycle_never_uses_actions_the_grid_does_not_support(self):
+        xml = s3xml.lifecycle_xml([{"id": "r", "prefix": "", "expire_days": 30, "noncurrent_days": 7}]).decode()
+        self.assertIn("<Expiration>", xml)
+        self.assertIn("<NoncurrentVersionExpiration>", xml)
+        for banned in ("AbortIncompleteMultipartUpload", "Transition"):             # NetApp: StorageGRID supports Expiration actions only
+            self.assertNotIn(banned, xml)
+        raw = b'<LifecycleConfiguration><Rule><ID>x</ID><Filter><Prefix></Prefix></Filter><Status>Enabled</Status><Transition><Days>1</Days></Transition></Rule></LifecycleConfiguration>'
+        self.assertTrue(s3xml.lifecycle_from(raw)[0]["custom"])                     # a rule it cannot describe is kept as it is
 
 
 class PortalControls(unittest.TestCase):
@@ -707,13 +824,13 @@ class PortalControls(unittest.TestCase):
         for text in ("Before you start", "Name and place", "How should the data be protected?", "Clean-up (optional)", "Who can use it?"):
             self.assertIn(text, page)
         st, page = c.post_form("/buckets/new", "/buckets/new", {"name": "guided-one", "region": "us-east-1", "purpose": "keep-versions",
-                                                               "c_uploads": "1", "c_old": "30"})
+                                                               "c_old": "30"})
         self.assertEqual(st, 200)
         for text in ("Bucket guided-one is ready", "What to do now", "/keys/new?bucket=guided-one", "aws s3 cp"):
             self.assertIn(text, page)
         b = self.app.backend.get_bucket(ref, "guided-one")
         self.assertEqual(b["versioning"], "enabled")
-        self.assertEqual({r["id"] for r in b["lifecycle"]}, {"cleanup-uploads", "old-versions"})
+        self.assertEqual({r["id"] for r in b["lifecycle"]}, {"old-versions"})
         self.assertTrue(self.app.db.one("SELECT 1 FROM audit WHERE action='bucket.create' AND target='guided-one'"))
         # the key page opens with that bucket already ticked
         st, page = c.get("/keys/new?bucket=guided-one")

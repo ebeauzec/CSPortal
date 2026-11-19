@@ -34,8 +34,7 @@ images, one for log files.
      - **Standard**: a user with special permission can still shorten or remove the lock.
      - **Strict**: nobody, not even the provider, can shorten or remove it until the time ends. Tick the box to confirm
        you understand. **Locking cannot be added to a bucket later**, so decide now.
-4. **Question 3: Clean-up (optional).**
-   - *Remove incomplete uploads after 7 days* is ticked by default. It frees space left by uploads that never finished.
+4. **Question 3: Clean-up (optional).** Both fields can stay empty.
    - *Delete objects automatically after (days)*: leave empty to keep objects until you delete them. It cannot be combined with locking.
    - *Delete old versions after (days)*: only for buckets that keep old versions. Leave empty to keep them.
 5. **Question 4: Who can use it?** Nothing to choose here. A new bucket is **private**: only you can use it, until you

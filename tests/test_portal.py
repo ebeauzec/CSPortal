@@ -76,7 +76,7 @@ class PortalTests(unittest.TestCase):
         st, page = c.post_form("/buckets", "/buckets", {"name": "test-bucket-one", "region": "us-east-1", "versioning": "1"})
         self.assertIn("test-bucket-one", page)
         st, page = c.post_form("/buckets/test-bucket-one", "/buckets/test-bucket-one/lifecycle",
-                               {"rule_id": "r1", "prefix": "logs/", "expire_days": "30", "noncurrent_days": "", "abort_multipart_days": "7"})
+                               {"rule_id": "r1", "prefix": "logs/", "expire_days": "30", "noncurrent_days": ""})
         self.assertIn("r1", page)
         b = self.app.backend.get_bucket(self._ref("riverbend"), "test-bucket-one")
         self.assertEqual(b["versioning"], "enabled")

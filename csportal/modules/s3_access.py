@@ -105,7 +105,7 @@ def register(app):
                 last = len(ks) == 1 and own and can_new
                 msg = ("Delete this key? Applications using it stop working immediately. It is this key's only key, so its permissions are removed too."
                        if last else "Delete this key? Applications using it stop working immediately.")
-                rows.append([Raw(f"<code>{esc(k['id'])}</code>"), k["created"][:10], k.get("last_used") or "never", _expiry_cell(k.get("expires")),
+                rows.append([Raw(f"<code>{esc(k.get('label') or k['id'])}</code>"), k["created"][:10], k.get("last_used") or "never", _expiry_cell(k.get("expires")),
                              ui.button("Delete", "/keys/delete", ctx.sess.csrf, {"user": u["username"], "key": k["id"]}, "small danger", confirm=msg)
                              if can_keys else ""])
             state = ui.badge("disabled", "warn") if u["disabled"] else ""

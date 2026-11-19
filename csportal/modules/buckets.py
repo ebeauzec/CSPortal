@@ -107,7 +107,7 @@ def register(app):
         "<p>You are about to create a <strong>bucket</strong>: a top-level folder that holds your files (objects). It takes about a minute.</p>"
         '<ol class="howto"><li>Answer the questions below. Nothing is created until you press <em>Create bucket</em>.</li>'
         "<li>The next page confirms what was created and lists what to do next, including how to give an application access.</li></ol>"
-        '<p class="muted">Not sure? Keep the suggested choices: old versions kept, incomplete uploads cleaned up. '
+        '<p class="muted">Not sure? Keep the suggested choice: old versions kept. '
         "You can change versioning, clean-up and access rules later on the bucket's page. A bucket's name cannot be changed.</p>")
 
     def _new_form(ctx, v=None, error="", suggestion=""):
@@ -148,8 +148,6 @@ def register(app):
                 + radio("keep-versions", purpose == "keep-versions") + radio("latest-only", purpose == "latest-only")
                 + radio("locked", purpose == "locked", disabled=not lock_ok) + lock_block + '</fieldset>'
                 '<fieldset class="step"><legend><span class="n">3</span> Clean-up (optional)</legend>'
-                f'<label class="check"><input type="checkbox" name="c_uploads" value="1"{" checked" if v.get("c_uploads", "1") else ""}> '
-                'Remove incomplete uploads after 7 days <small class="muted">(saves space; recommended)</small></label>'
                 f'<div class="field"><label>Delete objects automatically after (days)<input type="number" name="c_expire" min="1" max="36500" value="{esc(v.get("c_expire", ""))}"></label>'
                 '<small class="muted">Leave empty to keep objects until you delete them. Not combined with locking.</small></div>'
                 f'<div class="field"><label>Delete old versions after (days)<input type="number" name="c_old" min="1" max="36500" value="{esc(v.get("c_old", ""))}"></label>'
@@ -174,7 +172,6 @@ def register(app):
     def new_post(ctx):
         plan = _plan(ctx)
         v = {k: ctx.f(k) for k in ("name", "region", "purpose", "lock_amount", "lock_unit", "lock_mode", "c_expire", "c_old")}
-        v["c_uploads"] = ctx.f("c_uploads")
         name = v["name"]
         if v["purpose"] not in _PURPOSE_HELP:
             v["purpose"] = "keep-versions"
@@ -202,17 +199,15 @@ def register(app):
                 return fail("Tick the box to confirm that strict retention cannot be shortened or removed.")
         versioning = purpose in ("keep-versions", "locked")
         rules = []
-        if v["c_uploads"]:
-            rules.append({"id": "cleanup-uploads", "prefix": "", "expire_days": 0, "noncurrent_days": 0, "abort_multipart_days": 7})
         exp, old = _int(v["c_expire"], 36500), _int(v["c_old"], 36500)
         if v["c_expire"].strip() and not exp or v["c_old"].strip() and not old:
             return fail("Enter whole numbers of days, or leave the clean-up fields empty.")
         if exp and lock:
             return fail("Automatic deletion cannot be combined with locking. Leave the clean-up days empty.")
         if exp:
-            rules.append({"id": "auto-expire", "prefix": "", "expire_days": exp, "noncurrent_days": 0, "abort_multipart_days": 0})
+            rules.append({"id": "auto-expire", "prefix": "", "expire_days": exp, "noncurrent_days": 0})
         if old and versioning:
-            rules.append({"id": "old-versions", "prefix": "", "expire_days": 0, "noncurrent_days": old, "abort_multipart_days": 0})
+            rules.append({"id": "old-versions", "prefix": "", "expire_days": 0, "noncurrent_days": old})
         elif old:
             return fail("Old versions are only kept when you choose to keep versions. Clear that field, or choose to keep old versions.")
         app.backend.create_bucket(ctx.ref, name, region, versioning, bool(lock))
@@ -237,7 +232,7 @@ def register(app):
         prot = {"keep-versions": "Old versions are kept", "latest-only": "Only the latest version is kept", "locked": "Locked"}[purpose]
         if lock:
             prot += f": each object is kept {lock['amount']} {lock['unit']} ({'strict' if lock['mode'] == 'COMPLIANCE' else 'standard'})"
-        names = {"cleanup-uploads": "incomplete uploads removed after 7 days", "auto-expire": "objects deleted automatically",
+        names = {"auto-expire": "objects deleted automatically",
                  "old-versions": "old versions deleted automatically"}
         clean = ", ".join(names[r["id"]] for r in rules) or "none"
         done = ui.card(f"Bucket {name} is ready", ui.kv([("Name", Raw(f"<code>{esc(name)}</code>")), ("Region", region), ("Protection", prot),
@@ -296,8 +291,7 @@ def register(app):
                 desc = "custom rule set with the S3 API (kept as it is)"
             else:
                 desc = ", ".join(x for x in [f"expire after {r['expire_days']} days" if r.get("expire_days") else "",
-                                             f"delete old versions after {r['noncurrent_days']} days" if r.get("noncurrent_days") else "",
-                                             f"clean incomplete uploads after {r['abort_multipart_days']} days" if r.get("abort_multipart_days") else ""] if x)
+                                             f"delete old versions after {r['noncurrent_days']} days" if r.get("noncurrent_days") else ""] if x)
             lrows.append([r["id"], r.get("prefix") or "all objects", desc,
                           ui.button("Remove", f"/buckets/{n}/lifecycle/delete", csrf, {"rule": r["id"]}, "small danger",
                                     confirm="Remove this rule?") if edit else ""])
@@ -306,7 +300,6 @@ def register(app):
             {"name": "prefix", "label": "Applies to keys starting with", "required": False, "help": "Leave empty for every object."},
             {"name": "expire_days", "label": "Delete objects after (days)", "type": "number", "required": False, "attrs": {"min": "1", "max": "36500"}},
             {"name": "noncurrent_days", "label": "Delete old versions after (days)", "type": "number", "required": False, "attrs": {"min": "1", "max": "36500"}},
-            {"name": "abort_multipart_days", "label": "Clean incomplete uploads after (days)", "type": "number", "required": False, "attrs": {"min": "1", "max": "365"}},
         ], csrf, "Add rule") if edit else ""
         lc = ui.card("Lifecycle rules", Raw(ui.table(["Rule", "Applies to", "Action", ""], lrows, "No rules. Objects are kept until you delete them.") + lform))
         # Object Lock
@@ -389,8 +382,8 @@ def register(app):
         b = app.backend.get_bucket(ctx.ref, ctx.params["name"])
         rid = _RULE_ID.sub("-", ctx.f("rule_id"))[:40]
         rule = {"id": rid, "prefix": ctx.f("prefix")[:200], "expire_days": _int(ctx.f("expire_days"), 36500),
-                "noncurrent_days": _int(ctx.f("noncurrent_days"), 36500), "abort_multipart_days": _int(ctx.f("abort_multipart_days"), 365)}
-        if not rid or not (rule["expire_days"] or rule["noncurrent_days"] or rule["abort_multipart_days"]):
+                "noncurrent_days": _int(ctx.f("noncurrent_days"), 36500)}
+        if not rid or not (rule["expire_days"] or rule["noncurrent_days"]):
             ctx.flash("Error: Give the rule a name and at least one action.")
             return _back(b["name"])
         rules = [r for r in b["lifecycle"] if r["id"] != rid] + [rule]

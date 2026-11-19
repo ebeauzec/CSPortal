@@ -92,8 +92,7 @@ list is in [TENANT_PARITY.md](TENANT_PARITY.md).
 
 **Customer portal.**
 - Create, list and delete buckets; see size and object count per bucket.
-- Turn on versioning; set lifecycle rules (expire objects, expire old versions, abort incomplete
-  uploads); set the default Object Lock retention (governance or compliance) where the CSP and the grid allow it.
+- Turn on versioning; set lifecycle rules (expire objects, expire old versions); set the default Object Lock retention (governance or compliance) where the CSP and the grid allow it.
 - Bucket access: grant a group or storage user read, read-write or upload-only access to the whole bucket or one
   folder; require encrypted connections; a checked policy editor; a public-access guard that follows the plan.
 - Cross-origin (CORS) rules for browser applications.

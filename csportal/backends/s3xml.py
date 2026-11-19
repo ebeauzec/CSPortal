@@ -46,6 +46,8 @@ def versioning_from(raw: bytes) -> str:
 
 
 # ------------------------------------------------------------------ lifecycle
+# StorageGRID supports Expiration and NoncurrentVersionExpiration only. It does not support Transition or
+# AbortIncompleteMultipartUpload, so the portal never writes them (NetApp: "Create S3 lifecycle configuration").
 def lifecycle_xml(rules: list[dict]) -> bytes:
     out = []
     for r in rules:
@@ -57,13 +59,11 @@ def lifecycle_xml(rules: list[dict]) -> bytes:
             x += f"<Expiration><Days>{int(r['expire_days'])}</Days></Expiration>"
         if r.get("noncurrent_days"):
             x += f"<NoncurrentVersionExpiration><NoncurrentDays>{int(r['noncurrent_days'])}</NoncurrentDays></NoncurrentVersionExpiration>"
-        if r.get("abort_multipart_days"):
-            x += f"<AbortIncompleteMultipartUpload><DaysAfterInitiation>{int(r['abort_multipart_days'])}</DaysAfterInitiation></AbortIncompleteMultipartUpload>"
         out.append(x + "</Rule>")
     return f'<LifecycleConfiguration xmlns="{NS}">{"".join(out)}</LifecycleConfiguration>'.encode()
 
 
-_SIMPLE_RULE_CHILDREN = {"ID", "Filter", "Prefix", "Status", "Expiration", "NoncurrentVersionExpiration", "AbortIncompleteMultipartUpload"}
+_SIMPLE_RULE_CHILDREN = {"ID", "Filter", "Prefix", "Status", "Expiration", "NoncurrentVersionExpiration"}
 
 
 def lifecycle_from(raw: bytes) -> list[dict]:
@@ -84,10 +84,9 @@ def lifecycle_from(raw: bytes) -> list[dict]:
                 v = _t(rule.find(parent), child)
                 return int(v) if v.isdigit() else 0
             rules.append({"id": rid, "prefix": prefix, "expire_days": num("Expiration", "Days"),
-                          "noncurrent_days": num("NoncurrentVersionExpiration", "NoncurrentDays"),
-                          "abort_multipart_days": num("AbortIncompleteMultipartUpload", "DaysAfterInitiation")})
+                          "noncurrent_days": num("NoncurrentVersionExpiration", "NoncurrentDays")})
         else:
-            rules.append({"id": rid, "prefix": prefix, "expire_days": 0, "noncurrent_days": 0, "abort_multipart_days": 0,
+            rules.append({"id": rid, "prefix": prefix, "expire_days": 0, "noncurrent_days": 0,
                           "raw": ET.tostring(rule, encoding="unicode"), "custom": True})
     return rules
 
@@ -164,6 +163,11 @@ def objectlock_xml(default: dict | None) -> bytes:
         x += (f"<Rule><DefaultRetention><Mode>{esc(default['mode'])}</Mode><{unit}>{int(default['amount'])}</{unit}>"
               f"</DefaultRetention></Rule>")
     return (x + "</ObjectLockConfiguration>").encode()
+
+
+def objectlock_enabled(raw: bytes) -> bool:
+    r = parse(raw)
+    return r is not None and _t(r, "ObjectLockEnabled") == "Enabled"
 
 
 def objectlock_from(raw: bytes) -> dict | None:

@@ -1,7 +1,8 @@
 """Native StorageGRID connector (Grid Management API, Tenant Management API, S3 API).
 
-STATUS: UNVERIFIED. The calls below follow the public StorageGRID documentation as understood when
-this was written, but they have NOT been run against a real grid. Before production use:
+STATUS: UNVERIFIED AGAINST A REAL GRID. Request shapes were compared with NetApp's published StorageGRID
+documentation and with NetApp's own Ansible collection (netapp.storagegrid); see docs/API_VERIFICATION.md for
+what was confirmed and what was not. Nothing has been run against a real grid. Before production use:
 
   1. run `python -m csportal conformance`, which compares every path used here with the OpenAPI
      document the grid itself publishes and lists anything that does not exist on that release;
@@ -46,11 +47,14 @@ CALLS = [
     ("GET", "/grid/health"), ("GET", "/grid/alerts"),
     ("GET", "/org/containers"), ("POST", "/org/containers"), ("DELETE", "/org/containers/{bucketName}"),
     ("GET", "/org/groups"), ("POST", "/org/groups"), ("PUT", "/org/groups/{id}"), ("DELETE", "/org/groups/{id}"),
-    ("GET", "/org/users"), ("POST", "/org/users"), ("PATCH", "/org/users/{id}"), ("DELETE", "/org/users/{id}"),
+    ("GET", "/org/users"), ("POST", "/org/users"), ("PUT", "/org/users/{id}"), ("DELETE", "/org/users/{id}"),
     ("GET", "/org/users/{id}/s3-access-keys"), ("POST", "/org/users/{id}/s3-access-keys"),
     ("DELETE", "/org/users/{id}/s3-access-keys/{accessKey}"),
     ("GET", "/org/usage"),
 ]
+
+
+_PAGE = 100          # list calls return pages; this is the page size asked for
 
 
 class StorageGridBackend(StorageBackend):
@@ -161,6 +165,31 @@ class StorageGridBackend(StorageBackend):
                 422: "invalid"}.get(status, "backend_error")
         raise BackendError(code, logs.scrub(msg) or f"The storage service returned an error ({status}).", status)
 
+    def _list(self, scope: str, path: str, key: str = "id", params: dict | None = None) -> list:
+        """Every item of a list call. The grid answers in pages (`limit`); the next page starts after `marker`, the last
+        item of the page before. Stops on a short or empty page, or when a page brings nothing new."""
+        out: list = []
+        seen: set = set()
+        marker = None
+        for _ in range(500):
+            p = dict(params or {})
+            p["limit"] = _PAGE
+            if marker:
+                p["marker"] = marker
+            page = self._api(scope, "GET", path, params=p) or []
+            if not isinstance(page, list):
+                return page
+            new = [x for x in page if str(x.get(key)) not in seen]
+            if not new:
+                break
+            for x in new:
+                seen.add(str(x.get(key)))
+            out.extend(new)
+            if len(page) < _PAGE:
+                break
+            marker = page[-1].get(key)
+        return out
+
     def _token(self, scope: str, force: bool = False) -> str:
         with self._lock:
             tok = self._tokens.get(scope)
@@ -173,10 +202,12 @@ class StorageGridBackend(StorageBackend):
             if not c:
                 raise BackendError("no_credentials", "No service credentials are stored for this storage account.", 500)
             acct, user, pw = scope, c["username"], c["password"]
+        body = {"username": user, "password": pw, "cookie": False, "csrfToken": False}
+        if scope != "grid":
+            body["accountId"] = acct              # only a tenant sign-in names its account; the grid sign-in does not
         status, raw = self._mgmt("POST", f"/api/{self.ver}/authorize",
                                  {"Content-Type": "application/json", "Accept": "application/json"},
-                                 json.dumps({"accountId": acct, "username": user, "password": pw,
-                                             "cookie": False, "csrfToken": False}).encode())
+                                 json.dumps(body).encode())
         tok_v = self._unwrap(status, raw)
         if not isinstance(tok_v, str):
             raise BackendError("auth_failed", "Sign-in to the storage service failed.", 401)
@@ -244,15 +275,16 @@ class StorageGridBackend(StorageBackend):
     # ------------------------------------------------------------------ tenants
     def list_tenants(self):
         return [{"ref": str(a["id"]), "name": a.get("name", ""), "quota_bytes": int((a.get("policy") or {}).get("quotaObjectBytes") or 0)}
-                for a in self._api("grid", "GET", "/grid/accounts") or []]
+                for a in self._list("grid", "/grid/accounts")]
 
     def create_tenant(self, name, quota_bytes, features) -> str:
         root_pw = secrets.token_urlsafe(24)
         acct = self._api("grid", "POST", "/grid/accounts", {
-            "name": name, "capabilities": ["s3"], "password": root_pw,
+            # "management" lets the tenant sign in to the Tenant Management API, which the portal uses for everything inside the tenant
+            "name": name, "capabilities": ["s3", "management"], "password": root_pw,
             "policy": {"useAccountIdentitySource": bool(features.get("own_identity")),
                        "allowPlatformServices": bool(features.get("platform_services")),
-                       "quotaObjectBytes": int(quota_bytes)}})
+                       "quotaObjectBytes": int(quota_bytes) or None}})          # null means no quota; 0 is not a quota
         ref = str(acct["id"])
         # The portal manages the tenant as its root user: the password was set above, so these credentials are known to
         # work. They are kept only in encrypted storage. A dedicated service user and group exist to own the S3 key used
@@ -280,12 +312,15 @@ class StorageGridBackend(StorageBackend):
         cur = self._api("grid", "GET", f"/grid/accounts/{ref}")
         pol = cur.get("policy", {})
         if quota_bytes is not None:
-            pol["quotaObjectBytes"] = int(quota_bytes)
+            pol["quotaObjectBytes"] = int(quota_bytes) or None
         if features is not None:
             pol["allowPlatformServices"] = bool(features.get("platform_services"))
             pol["useAccountIdentitySource"] = bool(features.get("own_identity"))
-        cur["policy"] = pol
-        self._api("grid", "PUT", f"/grid/accounts/{ref}", cur)
+        # send back only the fields a change may carry (name, description, capabilities, policy), not the read-only ones
+        body = {"name": cur.get("name"), "capabilities": cur.get("capabilities") or ["s3", "management"], "policy": pol}
+        if cur.get("description") is not None:
+            body["description"] = cur["description"]
+        self._api("grid", "PUT", f"/grid/accounts/{ref}", body)
 
     def set_suspended(self, ref, suspended):
         # StorageGRID has no suspend flag on accounts; the portal blocks sign-in and disables the keys.
@@ -308,11 +343,12 @@ class StorageGridBackend(StorageBackend):
         """Cheap listing: settings that need one S3 call each (versioning, access) are read on the bucket page."""
         use = {b["name"]: b for b in self.usage(ref)["buckets"]}
         out = []
-        for b in self._api(ref, "GET", "/org/containers") or []:
+        # region is returned only when asked for with `include`
+        for b in self._list(ref, "/org/containers", key="name", params={"include": "compliance,region"}):
             n = b["name"]
             out.append({"name": n, "region": b.get("region", "us-east-1"), "created": b.get("creationTime", ""),
                         "bytes": use.get(n, {}).get("bytes", 0), "objects": use.get(n, {}).get("objects", 0),
-                        "versioning": "unknown", "object_lock": bool(b.get("objectLock") or b.get("s3ObjectLock")), "public": None,
+                        "versioning": "unknown", "object_lock": bool((b.get("s3ObjectLock") or {}).get("enabled")), "public": None,
                         "lifecycle": [], "consistency": b.get("consistency", ""), "policy": None, "cors": [],
                         "lock_default": None, "notes": []})
         return out
@@ -335,9 +371,11 @@ class StorageGridBackend(StorageBackend):
             b["public"] = bpolicy.is_public(b["policy"]) if raw is not None else None
             raw = self._s3_read(ref, name, "cors", notes)
             b["cors"] = s3xml.cors_from(raw) if raw else []
-            if b["object_lock"]:
-                raw = self._s3_read(ref, name, "object-lock", notes)
-                b["lock_default"] = s3xml.objectlock_from(raw) if raw else None
+            # the bucket list may not say whether Object Lock is on, so ask the bucket: a bucket without it answers 404
+            raw = self._s3_read(ref, name, "object-lock", notes)
+            if raw:
+                b["object_lock"] = b["object_lock"] or s3xml.objectlock_enabled(raw)
+                b["lock_default"] = s3xml.objectlock_from(raw)
             return b
         raise BackendError("bucket_not_found", "The bucket was not found.", 404)
 
@@ -388,7 +426,7 @@ class StorageGridBackend(StorageBackend):
     # ------------------------------------------------------------------ users, groups, keys
     def list_groups(self, ref):
         return [{"name": g.get("displayName", g.get("uniqueName")), "access": _access(g), "buckets": _scope(g), "id": g["id"],
-                 "created": ""} for g in self._api(ref, "GET", "/org/groups") or []
+                 "created": ""} for g in self._list(ref, "/org/groups")
                 if g.get("uniqueName") != "group/csportal-service"]
 
     def create_group(self, ref, name, access, buckets=None):
@@ -396,60 +434,77 @@ class StorageGridBackend(StorageBackend):
                                               "policies": {"s3": {"Statement": _s3_policy(access, buckets)}}})
 
     def update_group(self, ref, name, access=None, buckets=None):
-        for g in self._api(ref, "GET", "/org/groups") or []:
+        for g in self._list(ref, "/org/groups"):
             if g.get("displayName") == name:
                 acc = access if access is not None else _access(g)
                 scope = buckets if buckets is not None else _scope(g)
-                g.setdefault("policies", {})["s3"] = {"Statement": _s3_policy(acc, scope)}
-                self._api(ref, "PUT", f"/org/groups/{g['id']}", g)
+                pol = dict(g.get("policies") or {})
+                pol["s3"] = {"Statement": _s3_policy(acc, scope)}
+                # only the fields the update accepts, not the read-only ones (id, accountId, groupURN, federated)
+                self._api(ref, "PUT", f"/org/groups/{g['id']}", {"displayName": g.get("displayName"), "uniqueName": g.get("uniqueName"),
+                                                                 "policies": pol})
                 return
         raise BackendError("not_found", "The group was not found.", 404)
 
     def delete_group(self, ref, name):
-        for g in self._api(ref, "GET", "/org/groups") or []:
+        for g in self._list(ref, "/org/groups"):
             if g.get("displayName") == name:
                 self._api(ref, "DELETE", f"/org/groups/{g['id']}")
                 return
         raise BackendError("not_found", "The group was not found.", 404)
 
     def _user(self, ref, username):
-        for u in self._api(ref, "GET", "/org/users") or []:
+        for u in self._list(ref, "/org/users"):
             if u.get("uniqueName") == f"user/{username}":
                 return u
         raise BackendError("user_not_found", "The user was not found.", 404)
 
     def list_users(self, ref):
-        gm = {g["id"]: g.get("displayName") for g in self._api(ref, "GET", "/org/groups") or []}
+        gm = {g["id"]: g.get("displayName") for g in self._list(ref, "/org/groups")}
         return [{"username": u["uniqueName"].split("/", 1)[-1], "full_name": u.get("fullName", ""),
                  "groups": [gm.get(i, i) for i in u.get("memberOf", [])], "disabled": bool(u.get("disable")), "keys": 0}
-                for u in self._api(ref, "GET", "/org/users") or [] if u.get("uniqueName") != "user/csportal-service"]
+                for u in self._list(ref, "/org/users") if u.get("uniqueName") != "user/csportal-service"]
 
     def create_user(self, ref, username, full_name, groups):
-        gm = {g.get("displayName"): g["id"] for g in self._api(ref, "GET", "/org/groups") or []}
+        gm = {g.get("displayName"): g["id"] for g in self._list(ref, "/org/groups")}
         self._api(ref, "POST", "/org/users", {"fullName": full_name, "uniqueName": f"user/{username}",
                                               "memberOf": [gm[g] for g in groups if g in gm], "disable": False})
 
     def update_user(self, ref, username, groups=None, disabled=None):
         u = self._user(ref, username)
-        body: dict = {}
+        # a full replacement (PUT), as NetApp's own tooling does: the current values, with the requested changes
+        body = {"fullName": u.get("fullName", ""), "uniqueName": u.get("uniqueName"), "memberOf": list(u.get("memberOf") or []),
+                "disable": bool(u.get("disable"))}
         if disabled is not None:
             body["disable"] = bool(disabled)
         if groups is not None:
-            gm = {g.get("displayName"): g["id"] for g in self._api(ref, "GET", "/org/groups") or []}
+            gm = {g.get("displayName"): g["id"] for g in self._list(ref, "/org/groups")}
             body["memberOf"] = [gm[g] for g in groups if g in gm]
-        self._api(ref, "PATCH", f"/org/users/{u['id']}", body)
+        self._api(ref, "PUT", f"/org/users/{u['id']}", body)
 
     def delete_user(self, ref, username):
         self._api(ref, "DELETE", f"/org/users/{self._user(ref, username)['id']}")
 
     def list_keys(self, ref, username):
         u = self._user(ref, username)
-        return [{"id": k.get("accessKey", k.get("id")), "created": k.get("creationTime", ""), "last_used": None,
-                 "expires": k.get("expires")}
+        # The grid lists a key by an opaque `id` (what a delete needs) and a masked `displayName` (****...AB12); the
+        # access key ID itself is shown once, when the key is created.
+        return [{"id": k.get("id") or k.get("accessKey"), "label": k.get("displayName") or "", "created": k.get("creationTime", ""),
+                 "last_used": None, "expires": k.get("expires")}
                 for k in self._api(ref, "GET", f"/org/users/{u['id']}/s3-access-keys") or []]
 
     def create_key(self, ref, username, expires=None):
-        k = self._api(ref, "POST", f"/org/users/{self._user(ref, username)['id']}/s3-access-keys", {"expires": expires} if expires else {})
+        uid = self._user(ref, username)["id"]
+        k = self._api(ref, "POST", f"/org/users/{uid}/s3-access-keys", {"expires": expires} if expires else {})
+        # The documentation for this response was not found (see docs/API_VERIFICATION.md), so check what came back. A key
+        # whose secret nobody saw is of no use and must not be left behind.
+        if not isinstance(k, dict) or not k.get("accessKey") or not k.get("secretAccessKey"):
+            if isinstance(k, dict) and k.get("id"):
+                try:
+                    self._api(ref, "DELETE", f"/org/users/{uid}/s3-access-keys/{k['id']}")
+                except BackendError:
+                    pass
+            raise BackendError("backend_error", "The storage service did not return the new key's secret, so the key was removed. Try again.", 502)
         return {"id": k["accessKey"], "secret": k["secretAccessKey"]}
 
     def delete_key(self, ref, username, key_id):
