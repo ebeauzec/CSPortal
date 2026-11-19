@@ -28,8 +28,9 @@ Neutral release notes. Each entry says what changed and what is **not verified**
   major versions for the base image (a Python 3.15 proposal was declined: not tested on 3.15).
 
 **Not verified**
-- The image scan has not been seen to run yet (Docker is not available on the development machine). It does not
-  cover the host or the grid, and findings with no fix available yet do not fail it.
+- The image scan passed in GitHub Actions on 2026-11-19, after the zlib1g fix. It does not cover the host or the
+  grid, and findings with no fix available yet do not fail it. Docker is not available on the development
+  machine, so the image has not been run locally.
 - The product has not been run on Python 3.15. The supported version stays 3.12.
 - The dependency scan found no known vulnerabilities, locally and in its first GitHub Actions run (2026-11-19).
   It covers Python packages only, not the base image or host.
