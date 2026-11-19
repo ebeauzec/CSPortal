@@ -1,0 +1,4 @@
+#!/bin/sh
+# Repository rules before every push: files, and the metadata of every commit about to be sent. Do not bypass.
+python tools/check_repo.py || python3 tools/check_repo.py || { echo "Push blocked by repository rules."; exit 1; }
+exit 0

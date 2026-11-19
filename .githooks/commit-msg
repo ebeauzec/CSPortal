@@ -1,0 +1,11 @@
+#!/bin/sh
+# Owner's rule: no AI assistant or tool is ever listed as author, co-author or contributor.
+# Removes any such trailer from the commit message, then refuses the commit if a mention remains.
+f="$1"
+grep -v -i -E '^(co-authored-by|signed-off-by|author|reviewed-by|generated[- ]by|generated with):.*(cl[a]ude|anthrop[i]c|\bai\b|assistant|copilot|gpt|llm)' "$f" \
+  | grep -v -i -E '^.*(🤖|generated with \[).*$' > "$f.tmp" && mv "$f.tmp" "$f"
+if grep -q -i -E 'cl[a]ude|anthrop[i]c' "$f"; then
+  echo "Commit refused: the message mentions an AI assistant or tool. Reword it." >&2
+  exit 1
+fi
+exit 0

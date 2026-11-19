@@ -1,0 +1,34 @@
+{
+  "mode": "production",
+  "data_dir": "/data",
+  "public_url": "https://portal.example.net",
+  "admin_public_url": "https://admin.example.net",
+  "behind_proxy": true,
+  "customer_listen": { "host": "0.0.0.0", "port": 8443 },
+  "admin_listen": { "host": "0.0.0.0", "port": 8444 },
+  "admin_allow_proxy": false,
+  "session": { "idle_minutes": 30, "absolute_hours": 8 },
+  "security": {
+    "customer_mfa_required": true,
+    "lockout_attempts": 5,
+    "lockout_minutes": 15,
+    "min_password_length": 12
+  },
+  "log": { "level": "INFO", "dir": "/data/logs", "max_mb": 50, "backups": 20, "json": true, "syslog": "" },
+  "backend": {
+    "type": "storagegrid",
+    "storagegrid": {
+      "base_url": "https://grid-admin.example.net",
+      "api_version": "v4",
+      "account_id": "0",
+      "username": "csportal-provisioning",
+      "password_env": "CSPORTAL_GRID_PASSWORD",
+      "ca_file": "/etc/csportal/grid-ca.pem",
+      "verify_tls": true,
+      "s3_endpoint": "https://s3.example.net"
+    }
+  },
+  "smtp": { "host": "smtp.example.net", "port": 587, "username": "csportal", "password_env": "CSPORTAL_SMTP_PASSWORD", "from": "portal@example.net", "starttls": true },
+  "branding": { "name": "Example Cloud Storage", "product": "Object Storage", "color": "#0b5fff", "support_email": "support@example.net", "support_url": "", "legal_text": "" },
+  "jobs": { "usage_sample_minutes": 15, "alert_check_minutes": 15 }
+}

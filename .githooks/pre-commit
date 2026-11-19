@@ -1,0 +1,4 @@
+#!/bin/sh
+# Repository rules before every commit (see tools/check_repo.py). Do not bypass.
+python tools/check_repo.py || python3 tools/check_repo.py || { echo "Commit blocked by repository rules."; exit 1; }
+exit 0

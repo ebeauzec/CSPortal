@@ -1,0 +1,29 @@
+# Runtime data: never commit customer, grid or log data
+data/
+demo-data/
+*.db
+*.db-wal
+*.db-shm
+*.key
+*.pem
+*.log
+logs/
+backups/
+sim_state.json
+deploy/config.json
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Editors
+.vscode/
+.idea/
+*.zip

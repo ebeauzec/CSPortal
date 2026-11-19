@@ -1,0 +1,27 @@
+# Production-shaped example. The customer portal is published; the admin console is bound to a private
+# address on the host only. Put a TLS-terminating reverse proxy in front of the customer portal.
+services:
+  csportal:
+    build: .
+    image: csportal:0.1.0
+    command: ["serve"]
+    restart: unless-stopped
+    environment:
+      CSPORTAL_MASTER_KEY: ${CSPORTAL_MASTER_KEY:?set a master key: python -m csportal genkey}
+      CSPORTAL_GRID_PASSWORD: ${CSPORTAL_GRID_PASSWORD:?set the grid provisioning password}
+    volumes:
+      - csportal-data:/data
+      - ./deploy/config.json:/etc/csportal/config.json:ro
+    ports:
+      - "127.0.0.1:8443:8443"      # reverse proxy connects here
+      - "10.0.0.10:8444:8444"      # replace with the private management address of this host
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  csportal-data:
+
+# Demo (simulated storage, sample data, no secrets needed):
+#   docker build -t csportal . && docker run --rm -p 8443:8443 -p 8444:8444 csportal demo --data-dir /tmp/demo
